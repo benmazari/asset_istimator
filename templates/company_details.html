@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="fr" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Amortissement — Détails Société</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <script src="https://unpkg.com/feather-icons"></script>
+  <style>
+    :root {
+      --bg: #f5f6fa;
+      --surface: #ffffff;
+      --surface2: #f8fafc;
+      --border: #e2e8f0;
+      --accent: #4f46e5;
+      --accent-hover: #4338ca;
+      --accent-light: #e0e7ff;
+      --text: #1e293b;
+      --text-muted: #64748b;
+      --ok: #22c55e;
+      --err: #ef4444;
+      --radius: 16px;
+      --shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
+    }
+    [data-theme="dark"] {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface2: #22263a;
+      --border: #2e3350;
+      --accent: #4f7df3;
+      --accent-hover: #3b66d5;
+      --accent-light: rgba(79,125,243,0.15);
+      --text: #e2e8f0;
+      --text-muted: #8892aa;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); padding: 24px; min-height: 100vh; }
+    
+    .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+    .btn-back { display: flex; align-items: center; gap: 8px; text-decoration: none; color: var(--text-muted); font-weight: 500; transition: color 0.2s; font-size: 14px; }
+    .btn-back:hover { color: var(--accent); }
+    
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; box-shadow: var(--shadow); margin-bottom: 24px; }
+    
+    /* Filters Bar */
+    .filters-row { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; margin-bottom: 16px; }
+    .field { display: flex; flex-direction: column; gap: 6px; }
+    .field label { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; }
+    select, input[type=text] {
+      background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; color: var(--text);
+      font-family: 'Inter', sans-serif; font-size: 13px; padding: 10px 14px; outline: none; transition: all .2s;
+    }
+    select:focus, input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-light); }
+    .btn-apply { background: var(--accent); color: white; border: none; border-radius: 10px; padding: 10px 20px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all .2s; }
+    .btn-apply:hover { background: var(--accent-hover); transform: translateY(-1px); }
+
+    /* Table */
+    .table-wrap { overflow-x: auto; border-radius: 12px; border: 1px solid var(--border); }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { background: var(--surface2); padding: 12px 16px; text-align: left; font-weight: 600; color: var(--text-muted); border-bottom: 2px solid var(--border); font-size: 11px; text-transform: uppercase; }
+    td { padding: 12px 16px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+    
+    /* Group Rows */
+    .group-row { background: var(--surface2); cursor: pointer; transition: background 0.2s; }
+    .group-row:hover { background: var(--accent-light); }
+    .group-row td { font-weight: 700; border-bottom: 1px solid var(--border); }
+    .toggle-icon { display: inline-block; width: 16px; transition: transform 0.2s; color: var(--text-muted); }
+    .group-row.open .toggle-icon { transform: rotate(90deg); }
+    
+    /* Asset Rows */
+    .asset-row { display: none; }
+    .asset-row.show { display: table-row; }
+    .asset-row td:first-child { padding-left: 40px; }
+    .asset-row:hover td { background: var(--surface2); }
+    
+    .badge { padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; }
+    .badge.gap-pos { background: rgba(34,197,94,0.1); color: var(--ok); }
+    .badge.gap-neg { background: rgba(239,68,68,0.1); color: var(--err); }
+    
+    .btn-export { background: var(--ok); color: white; border: none; border-radius: 10px; padding: 10px 20px; font-size: 13px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 8px; transition: all 0.2s; }
+    .btn-export:hover { filter: brightness(0.9); transform: translateY(-1px); }
+
+    .loading { position: fixed; inset: 0; background: rgba(255,255,255,0.7); backdrop-filter: blur(4px); display: none; align-items: center; justify-content: center; z-index: 1000; flex-direction: column; gap: 14px; }
+    [data-theme="dark"] .loading { background: rgba(15,17,23,0.7); }
+    .loading.show { display: flex; }
+    .spinner { width: 40px; height: 40px; border: 4px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 1s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    #summary-stats div { text-align: right; }
+  </style>
+</head>
+<body>
+  <div class="loading" id="loading"><div class="spinner"></div><div style="font-size:14px; font-weight:500;">Chargement…</div></div>
+  
+  <div class="header">
+    <div>
+      <a href="/dashboard" class="btn-back"><i data-feather="arrow-left" style="width:18px;"></i> Retour au Dashboard</a>
+      <h1 id="title-company" style="margin-top: 16px; font-size: 24px; font-weight: 700;">Détails Société</h1>
+      <p id="subtitle" style="color: var(--text-muted); font-size: 13px; margin-top: 4px;"></p>
+    </div>
+    <div id="summary-stats" style="display: flex; gap: 40px;">
+       <div><div style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 600;">Total Immo</div><div id="stat-count" style="font-size: 24px; font-weight: 700;">—</div></div>
+       <div><div style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 600;">Écart Global</div><div id="stat-gap" style="font-size: 24px; font-weight: 700;">—</div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="filters-row">
+      <div class="field">
+        <label>Date (JJ/MM/AAAA)</label>
+        <input type="text" id="f-date" placeholder="ex: 31/12/2025" />
+      </div>
+      <div class="field">
+        <label>Granularité</label>
+        <select id="f-gran">
+          <option value="monthly">Mensuelle</option>
+          <option value="daily">Journalière</option>
+          <option value="yearly">Annuelle</option>
+        </select>
+      </div>
+      <div class="field" style="flex-direction: row; align-items: center; gap: 8px; padding-bottom: 10px;">
+        <input type="checkbox" id="f-non-amortie" style="width: 18px; height: 18px; cursor: pointer;" />
+        <label for="f-non-amortie" style="cursor: pointer; text-transform: none; font-size: 13px; color: var(--text);">Exclure amorties</label>
+      </div>
+      <button class="btn-apply" onclick="loadDetails()">Actualiser</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+      <h2 style="font-size: 16px; font-weight: 600;">Analyse par Immobilisation</h2>
+      <div style="display: flex; gap: 12px; align-items: center;">
+        <div style="position: relative;">
+           <i data-feather="search" style="position: absolute; left: 10px; top: 10px; width: 14px; color: var(--text-muted);"></i>
+           <input type="text" id="search-immo" placeholder="Rechercher..." style="padding: 8px 12px 8px 32px; width: 200px;" />
+        </div>
+        <button class="btn-export" onclick="exportExcel()">
+          <i data-feather="download" style="width:16px;"></i> Exporter
+        </button>
+      </div>
+    </div>
+    
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>ID / Code</th>
+            <th>Désignation</th>
+            <th style="text-align: right;">V. Brute</th>
+            <th style="text-align: right;">Réel Amorti</th>
+            <th style="text-align: right;">Estimé Amorti</th>
+            <th style="text-align: center;">Écart</th>
+            <th style="text-align: right;">Pér. Réel</th>
+            <th style="text-align: right;">Pér. Estimé</th>
+          </tr>
+        </thead>
+        <tbody id="assets-tbody">
+          <tr><td colspan="8" style="text-align: center; padding: 40px; color: var(--text-muted);">Chargement des données...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    if (localStorage.getItem('theme') === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+    feather.replace();
+
+    const params = new URLSearchParams(window.location.search);
+    const societe = params.get('societe');
+    
+    // Initialize filters from URL or default
+    document.getElementById('f-date').value = params.get('date') || '';
+    document.getElementById('f-gran').value = params.get('gran') || 'monthly';
+    document.getElementById('f-non-amortie').checked = params.get('non_amortie') === 'true';
+    const catIds = params.get('cat_ids');
+    const yDebut = params.get('year_debut');
+    const yType = params.get('year_debut_type');
+
+    document.getElementById('title-company').textContent = 'Analyse Détails : ' + (societe || 'Société Inconnue');
+
+    const fmt = (n) => n == null ? '—' : Number(n).toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2});
+
+    let allAssets = [];
+
+    async function loadDetails() {
+      if (!societe) return;
+      document.getElementById('loading').classList.add('show');
+      
+      const date = document.getElementById('f-date').value.trim();
+      const gran = document.getElementById('f-gran').value;
+      const nonAmortie = document.getElementById('f-non-amortie').checked;
+      
+      document.getElementById('subtitle').textContent = `Période: ${date || 'Toutes dates'} | Granularité: ${gran} | Exclure amorties: ${nonAmortie ? 'Oui' : 'Non'}`;
+
+      try {
+        let url = `/api/dashboard?societe=${encodeURIComponent(societe)}&date=${date}&gran=${gran}&non_amortie=${nonAmortie}`;
+        if (catIds) url += `&cat_ids=${catIds}`;
+        if (yDebut) url += `&year_debut=${yDebut}&year_debut_type=${yType}`;
+        
+        const r = await fetch(url);
+        const data = await r.json();
+        
+        allAssets = data.asset_details || [];
+        renderTable(allAssets);
+        
+        // Update stats
+        const comp = (data.gap_by_company || []).find(x => x.company === societe) || {count:0, gap:0};
+        document.getElementById('stat-count').textContent = comp.count;
+        document.getElementById('stat-gap').textContent = fmt(comp.gap) + ' DA';
+        document.getElementById('stat-gap').style.color = (comp.gap >= 0) ? 'var(--ok)' : 'var(--err)';
+        
+        document.getElementById('loading').classList.remove('show');
+      } catch (e) {
+        console.error(e);
+        document.getElementById('loading').classList.remove('show');
+        alert("Erreur lors du chargement: " + e.message);
+      }
+    }
+
+    function renderTable(assets) {
+      const tbody = document.getElementById('assets-tbody');
+      tbody.innerHTML = '';
+      
+      if (assets.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 40px; color: var(--text-muted);">Aucun actif trouvé</td></tr>';
+        return;
+      }
+
+      // Group by category
+      const groups = {};
+      assets.forEach(a => {
+        const cat = a.category_label || "Sans catégorie";
+        if (!groups[cat]) groups[cat] = { assets: [], pv: 0, real: 0, est: 0, p_real: 0, p_est: 0 };
+        groups[cat].assets.push(a);
+        groups[cat].pv += (a.purchase_value || 0);
+        groups[cat].real += (a.real || 0);
+        groups[cat].est += (a.estimated || 0);
+        groups[cat].p_real += (a.period_real || 0);
+        groups[cat].p_est += (a.period_est || 0);
+      });
+
+      let html = '';
+      let groupIdx = 0;
+      for (const catName in groups) {
+        groupIdx++;
+        const g = groups[catName];
+        const gap = g.real - g.est;
+        const sign = gap > 0 ? '+' : '';
+        const cls = gap >= 0 ? 'gap-pos' : 'gap-neg';
+
+        html += `
+          <tr class="group-row" onclick="toggleGroup(${groupIdx})" id="group-${groupIdx}">
+            <td><span class="toggle-icon">▶</span> ${catName}</td>
+            <td style="color: var(--text-muted);">${g.assets.length} immo.</td>
+            <td style="text-align: right;">${fmt(g.pv)}</td>
+            <td style="text-align: right;">${fmt(g.real)}</td>
+            <td style="text-align: right;">${fmt(g.est)}</td>
+            <td style="text-align: center;"><span class="badge ${cls}">${sign}${fmt(gap)}</span></td>
+            <td style="text-align: right;">${fmt(g.p_real)}</td>
+            <td style="text-align: right;">${fmt(g.p_est)}</td>
+          </tr>
+        `;
+
+        g.assets.forEach(a => {
+          const aGap = (a.real || 0) - (a.estimated || 0);
+          const aSign = aGap > 0 ? '+' : '';
+          const aCls = aGap >= 0 ? 'gap-pos' : 'gap-neg';
+          html += `
+            <tr class="asset-row group-child-${groupIdx}">
+              <td style="font-weight: 600; color: var(--accent);">${a.id_immo}<br><span style="font-size: 10px; color: var(--text-muted);">${a.code || ''}</span></td>
+              <td style="font-size: 12px; line-height: 1.4;">${a.asset_name || '—'}</td>
+              <td style="text-align: right; color: var(--text-muted);">${fmt(a.purchase_value)}</td>
+              <td style="text-align: right;">${fmt(a.real)}</td>
+              <td style="text-align: right;">${fmt(a.estimated)}</td>
+              <td style="text-align: center;"><span class="badge ${aCls}">${aSign}${fmt(aGap)}</span></td>
+              <td style="text-align: right;">${fmt(a.period_real)}</td>
+              <td style="text-align: right;">${fmt(a.period_est)}</td>
+            </tr>
+          `;
+        });
+      }
+      tbody.innerHTML = html;
+      feather.replace();
+    }
+
+    window.toggleGroup = function(idx) {
+      const row = document.getElementById(`group-${idx}`);
+      const children = document.querySelectorAll(`.group-child-${idx}`);
+      const isOpen = row.classList.contains('open');
+      
+      row.classList.toggle('open');
+      children.forEach(c => {
+        c.classList.toggle('show', !isOpen);
+      });
+    };
+
+    async function exportExcel() {
+      const date = document.getElementById('f-date').value.trim();
+      const gran = document.getElementById('f-gran').value;
+      const nonAmortie = document.getElementById('f-non-amortie').checked;
+      
+      let url = `/api/dashboard?societe=${encodeURIComponent(societe)}&date=${date}&gran=${gran}&non_amortie=${nonAmortie}&export=csv`;
+      if (catIds) url += `&cat_ids=${catIds}`;
+      if (yDebut) url += `&year_debut=${yDebut}&year_debut_type=${yType}`;
+      
+      window.location.href = url;
+    }
+
+    document.getElementById('search-immo').addEventListener('input', (e) => {
+      const s = e.target.value.toLowerCase();
+      const rows = document.querySelectorAll('.asset-row');
+      rows.forEach(r => {
+        const text = r.textContent.toLowerCase();
+        if (text.includes(s)) {
+           r.style.display = 'table-row';
+           // Also make sure parent group is visible
+           const gid = [...r.classList].find(c => c.startsWith('group-child-')).split('-')[2];
+           document.getElementById(`group-${gid}`).classList.add('open');
+        } else {
+           r.style.display = 'none';
+        }
+      });
+    });
+
+    loadDetails();
+  </script>
+</body>
+</html>

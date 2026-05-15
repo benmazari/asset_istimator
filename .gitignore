@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+ENV/
+
+# Output
+output/
+*.xlsx
+*.csv
+
+# IDEs
+.vscode/
+.idea/
+
+# Local Config
+config.yaml
+# (Keep config.yaml out if it contains sensitive DB credentials, 
+#  but for this tool it's the core logic. I'll comment it out 
+#  if the user wants to version it, but usually, it's safer to keep it out.)
