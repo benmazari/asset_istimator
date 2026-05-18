@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Amortissement — Analyse d'Économie</title>
+  <title>Asset Estimator — HASNAOUI GROUPE</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
   <script src="https://unpkg.com/feather-icons"></script>
@@ -178,42 +178,46 @@
     }
 
     /* ── Filters Bar ── */
-    .filters-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-      gap: 16px;
-      margin-bottom: 16px;
-    }
+    .filters-container { display: flex; flex-direction: column; gap: 20px; }
+    .filters-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
     .field { display: flex; flex-direction: column; gap: 6px; }
-    label { font-size: 12px; font-weight: 600; color: var(--text-muted); }
+    label { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
     select, input[type=text], input[type=number] {
       width: 100%;
       background: var(--surface2); border: 1px solid var(--border);
-      border-radius: 10px; color: var(--text);
+      border-radius: 12px; color: var(--text);
       font-family: 'Inter', sans-serif; font-size: 13px;
-      padding: 10px 14px; outline: none; transition: all .2s;
+      padding: 11px 16px; outline: none; transition: all .2s;
     }
     select:focus, input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-light); }
     
-    .cat-tags { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; max-height: 120px; overflow-y: auto; padding-right: 5px; }
-    .cat-tags::-webkit-scrollbar { width: 6px; }
-    .cat-tags::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    .cat-section {
+      background: var(--surface2);
+      border-radius: 14px;
+      padding: 20px;
+      border: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
 
+    .cat-tags { display: flex; flex-wrap: wrap; gap: 6px; }
     .cat-tag {
-      padding: 6px 14px; border-radius: 20px; border: 1px solid var(--border);
-      background: var(--surface2); color: var(--text-muted); font-size: 12px; font-weight: 500;
+      padding: 6px 12px; border-radius: 10px; border: 1px solid var(--border);
+      background: var(--surface); color: var(--text-muted); font-size: 11px; font-weight: 600;
       cursor: pointer; transition: all .2s ease;
     }
-    .cat-tag:hover { border-color: var(--accent); transform: translateY(-1px); }
-    .cat-tag.sel { background: var(--accent-light); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+    .cat-tag:hover { border-color: var(--accent); color: var(--accent); }
+    .cat-tag.sel { background: var(--accent); border-color: var(--accent); color: white; box-shadow: 0 4px 12px var(--accent-light); }
     
     .btn-apply {
-      width: 100%; height: 44px; border-radius: 12px;
-      font-family: 'Inter', sans-serif; font-size: 14px; font-weight: 600;
+      width: auto; align-self: center; min-width: 280px; height: 48px; border-radius: 14px;
+      font-family: 'Inter', sans-serif; font-size: 15px; font-weight: 700;
       cursor: pointer; border: none; background: var(--accent); color: #fff;
-      box-shadow: 0 4px 16px var(--accent-light); transition: all .2s;
+      box-shadow: 0 6px 20px var(--accent-light); transition: all .2s;
+      display: flex; align-items: center; justify-content: center; gap: 10px;
     }
-    .btn-apply:hover { background: var(--accent-hover); transform: translateY(-2px); }
+    .btn-apply:hover { background: var(--accent-hover); transform: translateY(-2px); box-shadow: 0 8px 24px var(--accent-light); }
 
     /* ── Table ── */
     .table-wrap { overflow-x: auto; }
@@ -276,8 +280,11 @@
   <!-- Sidebar -->
   <aside class="sidebar">
     <div class="logo">
-      <div class="logo-icon"><i data-feather="box" style="width:20px; height:20px; color:white;"></i></div>
-      <h1>Dabang</h1>
+      <img src="/static/logo.png" style="width:36px; height:36px; border-radius:10px; object-fit:cover;" />
+      <div style="display:flex; flex-direction:column; line-height:1.2;">
+        <h1 style="font-size:16px; margin:0; font-weight:700;">Asset Estimator</h1>
+        <span style="font-size:9px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px;">HASNAOUI GROUPE</span>
+      </div>
     </div>
     <nav class="sidebar-nav">
       <a href="/"><i data-feather="settings"></i> Générateur</a>
@@ -326,71 +333,91 @@
     <main class="content-area">
       
       <!-- Filters Card -->
+      <!-- Filters Card -->
       <div class="card">
-        <div class="card-title" style="cursor:pointer; display:flex; justify-content:space-between; align-items:center;" onclick="document.getElementById('filter-body').style.display = document.getElementById('filter-body').style.display === 'none' ? 'block' : 'none'; this.querySelector('svg').style.transform = document.getElementById('filter-body').style.display === 'none' ? 'rotate(180deg)' : 'rotate(0deg)';">
-          <span>Filtres Globaux</span>
-          <i data-feather="chevron-up" style="transition: transform 0.2s;"></i>
-        </div>
-        <div id="filter-body" style="display:block;">
-          <div class="filters-grid">
-          <div class="field">
-            <label>Société</label>
-            <select id="f-societe"><option value="">Toutes les sociétés</option></select>
-          </div>
-          <div class="field">
-            <label>Date (AAAA, MM/AAAA, JJ/MM/AAAA)</label>
-            <input type="text" id="f-date" placeholder="ex: 2025, 12/2025, 31/12/2025" />
-          </div>
-          <div class="field">
-            <label>Granularité</label>
-            <select id="f-gran">
-              <option value="monthly">Mensuelle</option>
-              <option value="daily">Journalière</option>
-              <option value="yearly">Annuelle</option>
-            </select>
-          </div>
-          <div class="field">
-            <label>Type de filtre Année</label>
-            <select id="f-year-debut-type">
-              <option value="start_date">Année début d'amortissement</option>
-              <option value="purchase_date">Année date d'acquisition</option>
-            </select>
-          </div>
-          <div class="field">
-            <label>Année</label>
-            <input type="text" id="f-year-debut" placeholder="ex: 2025" />
-          </div>
-          <div class="field">
-            <label>ID</label>
-            <input type="number" id="f-asset-id" placeholder="ex: 34473"/>
-          </div>
-          <div class="field">
-            <label>Nom / Code</label>
-            <input type="text" id="f-asset-search" placeholder="Recherche…"/>
+        <div class="card-title">
+          <div style="display:flex; align-items:center; gap:12px;">
+            <div style="background: var(--accent-light); padding: 8px; border-radius: 10px;">
+              <i data-feather="filter" style="width: 18px; height: 18px; color: var(--accent);"></i>
+            </div>
+            <span style="font-size: 16px; font-weight: 700;">Configuration des filtres</span>
           </div>
         </div>
+        
+        <div class="filters-container">
+          
+          <!-- Row 1: Context -->
+          <div class="filters-row">
+            <div class="field">
+              <label>Société</label>
+              <select id="f-societe"><option value="">Toutes les sociétés</option></select>
+            </div>
+            <div class="field">
+              <label>Date cible</label>
+              <input type="text" id="f-date" placeholder="ex: 2025, 12/2025..." />
+            </div>
+            <div class="field">
+              <label>Granularité</label>
+              <select id="f-gran">
+                <option value="monthly">Mensuelle</option>
+                <option value="daily">Journalière</option>
+                <option value="yearly">Annuelle</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>État d'amortissement</label>
+              <div style="height: 44px; display: flex; align-items: center; gap: 10px;">
+                <input type="checkbox" id="f-non-amortie" style="width: 20px; height: 20px; cursor: pointer;" />
+                <label for="f-non-amortie" style="cursor: pointer; font-size: 13px; color: var(--text); text-transform: none; letter-spacing: 0;">Exclure amorties</label>
+              </div>
+            </div>
+          </div>
 
-        <div class="field" style="flex-direction: row; align-items: center; gap: 10px; margin-top: 16px;">
-          <input type="checkbox" id="f-non-amortie" style="width: 18px; height: 18px; cursor: pointer;" />
-          <label for="f-non-amortie" style="cursor: pointer; font-size: 13px; color: var(--text);">Exclure les immo totalement amorties</label>
-        </div>
-        
-        <div style="border-top: 1px solid var(--border); padding-top: 16px; margin-bottom: 16px;">
-          <div class="field" style="max-width: 300px;">
-            <label style="margin-bottom:4px;">Filtrer les Catégories <span style="font-size:10px;font-weight:normal;">(Maintenez CTRL pour choix multiple)</span></label>
-            <select id="f-change-filter" multiple size="5" style="height: auto; padding: 6px;" onchange="filterSidebarCategories()">
-              <option value="all">Toutes les catégories</option>
-              <option value="modified" selected>Uniquement modifiées</option>
-              <option value="unmodified">Uniquement non-modifiées</option>
-              <option value="real">Catégories réelles (BD)</option>
-              <option value="virtual">Catégories virtuelles</option>
-            </select>
-            <select id="f-cats" style="display:none;"></select>
+          <!-- Row 2: Precision -->
+          <div class="filters-row">
+            <div class="field">
+              <label>Référence Année</label>
+              <select id="f-year-debut-type">
+                <option value="start_date">Début d'amortissement</option>
+                <option value="purchase_date">Date d'acquisition</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Année spécifique</label>
+              <input type="text" id="f-year-debut" placeholder="ex: 2025" />
+            </div>
+            <div class="field">
+              <label>ID Immobilisation</label>
+              <input type="number" id="f-asset-id" placeholder="ex: 34473"/>
+            </div>
+            <div class="field">
+              <label>Nom ou Code</label>
+              <input type="text" id="f-asset-search" placeholder="Recherche libre..."/>
+            </div>
           </div>
-          <div class="cat-tags" id="cat-tags"></div>
-        </div>
-        
-        <button class="btn-apply" onclick="loadData()">Actualiser l'Analyse</button>
+
+          <!-- Row 3: Categories -->
+          <div class="cat-section">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <label>Sélection des Catégories</label>
+              <div style="max-width: 220px; width: 100%;">
+                <select id="f-change-filter" multiple size="1" style="padding: 4px 10px; height: 32px; border-radius: 8px; font-size: 11px;" onchange="filterSidebarCategories()">
+                  <option value="all">Tout voir</option>
+                  <option value="modified" selected>Modifiées</option>
+                  <option value="unmodified">Non-modifiées</option>
+                  <option value="real">Réelles</option>
+                  <option value="virtual">Virtuelles</option>
+                </select>
+                <select id="f-cats" style="display:none;"></select>
+              </div>
+            </div>
+            <div class="cat-tags" id="cat-tags"></div>
+          </div>
+          
+          <button class="btn-apply" onclick="loadData()">
+            <i data-feather="refresh-ccw" style="width: 18px; height: 18px;"></i>
+            Mettre à jour l'analyse
+          </button>
         </div>
       </div>
 
@@ -443,7 +470,8 @@
 <script>
 feather.replace();
 
-function fmt(n) { return new Intl.NumberFormat('fr-FR').format(n); }
+function fmt(n) { return n == null ? '—' : new Intl.NumberFormat('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}).format(n); }
+function fmtInt(n) { return n == null ? '—' : new Intl.NumberFormat('fr-FR', {minimumFractionDigits:0, maximumFractionDigits:0}).format(n); }
 
 // ── Date snapping (DD/MM/YYYY → YYYY-MM-DD snapped to period end) ────────────
 function snapDate(dateStr, gran) {
@@ -717,7 +745,7 @@ function renderTable(rows, assetDetails) {
     html += `<tr onclick="toggleComp(${compIdx})" style="cursor:pointer;background:var(--surface2);border-bottom:2px solid var(--border);">
       <td style="font-weight:700;color:var(--text);"><span id="icon-${compIdx}" style="display:inline-block;width:16px;color:var(--muted);">▶</span> ${c.name}</td>
       <td style="color:var(--muted);font-size:11px;">${c.cats.length} catégorie(s)</td>
-      <td style="font-weight:600;">${fmt(c.count)}</td>
+      <td style="font-weight:600;">${fmtInt(c.count)}</td>
       <td style="font-weight:600;">${fmt(c.total_pv)}</td>
       <td class="yr-old" style="font-weight:700;">${fmt(c.real)}</td>
       <td class="yr-new" style="font-weight:700;">${c.estimated > 0 ? fmt(c.estimated) : '—'}</td>
@@ -740,7 +768,7 @@ function renderTable(rows, assetDetails) {
       html += `<tr class="child-row comp-${compIdx}" ${clickAttr} style="display:none;">
         <td></td>
         <td style="color:var(--text);padding-left:18px;">${toggleIcon} └ ${cat.category}</td>
-        <td>${fmt(cat.count)}</td>
+        <td>${fmtInt(cat.count)}</td>
         <td>${fmt(cat.total_pv)}</td>
         <td class="yr-old">${fmt(cat.real)}</td>
         <td class="yr-new">${cat.estimated > 0 ? fmt(cat.estimated) : '—'}</td>
@@ -810,12 +838,20 @@ window.toggleCat = function(catId) {
 };
 
 window.exportData = function() {
-  let exportUrl = '/api/dashboard?export=csv';
+  let exportUrl = '/api/dashboard?export=excel';
   if (window.exportParams) exportUrl += '&' + window.exportParams;
   window.location.href = exportUrl;
 };
 
 boot();
+
+function toggleFilters() {
+  const body = document.getElementById('filter-body');
+  const chev = document.getElementById('filter-chevron');
+  const isHidden = body.style.display === 'none' || body.style.display === '';
+  body.style.display = isHidden ? 'block' : 'none';
+  chev.style.transform = isHidden ? 'rotate(180deg)' : 'rotate(0deg)';
+}
 </script>
 
 <script>

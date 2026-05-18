@@ -33,32 +33,84 @@ def _clean_illegal_xml_chars(val):
 
 def _style_sheet(ws, df: pd.DataFrame):
     """Apply header style, alternating rows, column widths to a worksheet."""
+    import numpy as np
 
-    thin = Side(style="thin", color=BORDER_CLR)
-    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    # Enable gridlines
+    ws.views.sheetView[0].showGridLines = True
 
-    # ── Header row ───────────────────────────────────────────────────────────
-    header_font   = Font(bold=True, color=HEADER_FG, name="Calibri", size=10)
-    header_fill   = PatternFill("solid", fgColor=HEADER_BG)
-    header_align  = Alignment(horizontal="center", vertical="center",
-                               wrap_text=True)
+    # ── Borders ──────────────────────────────────────────────────────────────
+    thin_side = Side(style="thin", color="E5E7EB")
+    border_data = Border(left=thin_side, right=thin_side, top=thin_side, bottom=thin_side)
+    
+    header_side = Side(style="thin", color="E5E7EB")
+    border_header = Border(left=header_side, right=header_side, top=header_side, bottom=header_side)
 
+    # ── Styles ───────────────────────────────────────────────────────────────
+    font_header = Font(name="Segoe UI", size=10, bold=True, color="FFFFFF")
+    fill_header = PatternFill(start_color="4F46E5", end_color="4F46E5", fill_type="solid") # Premium Indigo
+    align_header = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+    font_data = Font(name="Segoe UI", size=10)
+    fill_alt = PatternFill(start_color="F9FAFB", end_color="F9FAFB", fill_type="solid") # Off-white alternating rows
+    
+    align_left = Alignment(horizontal="left", vertical="center")
+    align_right = Alignment(horizontal="right", vertical="center")
+    align_center = Alignment(horizontal="center", vertical="center")
+
+    # Header styling
+    ws.row_dimensions[1].height = 24
     for col_idx, col_name in enumerate(df.columns, start=1):
         cell = ws.cell(row=1, column=col_idx)
-        cell.font      = header_font
-        cell.fill      = header_fill
-        cell.alignment = header_align
-        cell.border    = border
+        cell.font = font_header
+        cell.fill = fill_header
+        cell.alignment = align_header
+        cell.border = border_header
 
-    ws.row_dimensions[1].height = 30
     ws.freeze_panes = "A2"
+
+    # Data styling
+    num_rows = len(df)
+    for row_idx in range(2, num_rows + 2):
+        ws.row_dimensions[row_idx].height = 18
+        
+        # Alternating row fill
+        use_alt = (row_idx % 2 == 1)
+        
+        for col_idx, col_name in enumerate(df.columns, start=1):
+            cell = ws.cell(row=row_idx, column=col_idx)
+            cell.font = font_data
+            cell.border = border_data
+            if use_alt:
+                cell.fill = fill_alt
+                
+            # Alignment & Number Formatting
+            col_series = df[col_name]
+            
+            # Smart alignment and number format based on dtype and column name
+            is_numeric = pd.api.types.is_numeric_dtype(col_series)
+            is_id_or_code = "id" in col_name.lower() or "code" in col_name.lower() or "compte" in col_name.lower() or "ref" in col_name.lower()
+            
+            if is_numeric and not is_id_or_code:
+                cell.alignment = align_right
+                if pd.api.types.is_integer_dtype(col_series):
+                    cell.number_format = '#,##0'
+                else:
+                    cell.number_format = '#,##0.00'
+            elif is_id_or_code or col_name.lower() in ["date", "période", "statut"]:
+                cell.alignment = align_center
+            else:
+                cell.alignment = align_left
 
     # ── Auto column widths ───────────────────────────────────────────────────
     for col_idx, col_name in enumerate(df.columns, start=1):
         col_letter = get_column_letter(col_idx)
-        # Width = max of header length vs max data length, capped at 40
-        max_data_len = df[col_name].head(1000).astype(str).str.len().max() if len(df) else 0
-        width = min(max(len(str(col_name)), max_data_len, 10) + 2, 40)
+        # Width = max of header length vs max data length, capped at 45
+        col_series = df[col_name].head(1000)
+        if len(df) and pd.api.types.is_numeric_dtype(col_series):
+            max_data_len = col_series.map(lambda x: len(f"{x:,.2f}") if isinstance(x, (int, float)) else len(str(x))).max()
+        else:
+            max_data_len = col_series.astype(str).str.len().max() if len(df) else 0
+        width = min(max(len(str(col_name)), max_data_len, 10) + 4, 45)
         ws.column_dimensions[col_letter].width = width
 
 

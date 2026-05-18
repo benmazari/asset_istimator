@@ -104,11 +104,7 @@ def _parse_flexible_date(d_str: str):
     return None, None
 
 
-from data_cache import global_cache, start_cache_thread
-try:
-    start_cache_thread(_load_config())
-except Exception as e:
-    print(f"Error starting cache thread: {e}")
+from data_cache import global_cache
 
 
 
@@ -881,27 +877,335 @@ def api_dashboard():
         # Calculate overall purchase value
         total_purchase_value = sum(d.get("total_pv", 0) for d in gap_list)
 
-        if request.args.get("export") == "csv":
+        if request.args.get("export") in ["excel", "csv"]:
+            from openpyxl import Workbook
+            from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+            from openpyxl.utils import get_column_letter
             import io
-            import csv
-            from flask import Response
-            si = io.StringIO()
-            cw = csv.writer(si, delimiter=';')
-            cw.writerow(['Societe', 'Categorie', 'Nombre Immo', 'Valeur Brute', 'Amorti Reel', 'Amorti Estime', 'Ecart (Charge/Produit)', 'Amortissement Courant Reel', 'Amortissement Courant Estime'])
-            for row in economy_list:
-                cw.writerow([
-                    row['company'], 
-                    row['category'], 
-                    row['count'], 
-                    str(row['total_pv']).replace('.', ','), 
-                    str(row['real']).replace('.', ','), 
-                    str(row['estimated']).replace('.', ','), 
-                    str(row['gap']).replace('.', ','),
-                    str(row['period_old'] if row['period_old'] is not None else '').replace('.', ','),
-                    str(row['period_new'] if row['period_new'] is not None else '').replace('.', ',')
-                ])
-            output = si.getvalue().encode('utf-8-sig')
-            return Response(output, mimetype='text/csv', headers={'Content-Disposition': 'attachment; filename=analyse_ecart_amortissement.csv'})
+            from flask import send_file
+
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "Analyse"
+            ws.views.sheetView[0].showGridLines = True
+
+            # Styles
+            font_title = Font(name="Segoe UI", size=14, bold=True, color="FFFFFF")
+            font_subtitle = Font(name="Segoe UI", size=9, italic=True, color="E0E7FF")
+            font_header = Font(name="Segoe UI", size=10, bold=True, color="FFFFFF")
+            font_data = Font(name="Segoe UI", size=10)
+            font_total = Font(name="Segoe UI", size=10, bold=True)
+
+            fill_title = PatternFill(start_color="1E1B4B", end_color="1E1B4B", fill_type="solid") # Dark indigo
+            fill_header = PatternFill(start_color="4F46E5", end_color="4F46E5", fill_type="solid") # Indigo accent
+            fill_total = PatternFill(start_color="F3F4F6", end_color="F3F4F6", fill_type="solid") # Cool gray 100
+            
+            # Subtle borders
+            thin_border = Border(
+                left=Side(style='thin', color='E5E7EB'),
+                right=Side(style='thin', color='E5E7EB'),
+                top=Side(style='thin', color='E5E7EB'),
+                bottom=Side(style='thin', color='E5E7EB')
+            )
+            total_border = Border(
+                top=Side(style='thin', color='9CA3AF'),
+                bottom=Side(style='double', color='111827')
+            )
+
+            align_left = Alignment(horizontal="left", vertical="center")
+            align_right = Alignment(horizontal="right", vertical="center")
+            align_center = Alignment(horizontal="center", vertical="center")
+
+            # Determine if this is a detailed or summary export
+            societe_val = request.args.get("societe")
+            if societe_val in ["Toutes", "undefined", "null", "all", ""]:
+                societe_val = None
+
+            if societe_val:
+                # DETAILED ASSETS EXPORT
+                filename = f"analyse_details_{societe_val.replace(' ', '_')}.xlsx"
+                title_text = f"Analyse Détaillée des Écarts d'Amortissement — {societe_val}"
+                
+                # Title Block
+                ws.merge_cells("A1:J2")
+                title_cell = ws["A1"]
+                title_cell.value = title_text
+                title_cell.font = font_title
+                title_cell.fill = fill_title
+                title_cell.alignment = align_center
+
+                # Subtitle Block (parameters)
+                ws.merge_cells("A3:J3")
+                sub_cell = ws["A3"]
+                date_param = request.args.get("date") or "Toutes dates"
+                gran_param = request.args.get("gran") or "mensuelle"
+                sub_cell.value = f"Date cible: {date_param} | Granularité: {gran_param} | Généré le: {datetime.now().strftime('%d/%m/%Y %H:%M')}"
+                sub_cell.font = font_subtitle
+                sub_cell.fill = fill_title
+                sub_cell.alignment = align_center
+
+                headers = [
+                    "Catégorie", "ID Immo", "Code", "Désignation", 
+                    "Valeur Brute", "Amorti Réel", "Amorti Estimé", 
+                    "Écart (Réel - Estimé)", "Dotation Période Réelle", "Dotation Période Estimée"
+                ]
+                
+                # Set row heights
+                ws.row_dimensions[1].height = 18
+                ws.row_dimensions[2].height = 18
+                ws.row_dimensions[3].height = 16
+                ws.row_dimensions[5].height = 24 # Header row
+
+                # Write headers
+                for col_idx, header in enumerate(headers, 1):
+                    cell = ws.cell(row=5, column=col_idx, value=header)
+                    cell.font = font_header
+                    cell.fill = fill_header
+                    cell.alignment = align_center
+                    cell.border = thin_border
+
+                # Write data
+                current_row = 6
+                total_pv = 0.0
+                total_real = 0.0
+                total_est = 0.0
+                total_gap = 0.0
+                total_p_real = 0.0
+                total_p_est = 0.0
+
+                for asset in asset_details_list:
+                    # Filter just in case
+                    if asset.get("company") != societe_val:
+                        continue
+                        
+                    pv = asset.get("purchase_value") or 0.0
+                    real = asset.get("real") or 0.0
+                    est = asset.get("estimated") or 0.0
+                    gap = (real - est) if (real is not None and est is not None) else (asset.get("gap") or 0.0)
+                    p_real = asset.get("period_real") or 0.0
+                    p_est = asset.get("period_est") or 0.0
+
+                    total_pv += pv
+                    total_real += real
+                    total_est += est
+                    total_gap += gap
+                    total_p_real += p_real
+                    total_p_est += p_est
+
+                    row_vals = [
+                        asset.get("category_label") or "Sans catégorie",
+                        asset.get("id_immo"),
+                        asset.get("code") or "",
+                        asset.get("asset_name") or "",
+                        pv,
+                        real,
+                        est,
+                        gap,
+                        p_real,
+                        p_est
+                    ]
+
+                    for col_idx, val in enumerate(row_vals, 1):
+                        cell = ws.cell(row=current_row, column=col_idx, value=val)
+                        cell.font = font_data
+                        cell.border = thin_border
+                        
+                        # Formatting and alignment
+                        if col_idx in [1, 3, 4]:
+                            cell.alignment = align_left
+                        elif col_idx in [2]:
+                            cell.alignment = align_center
+                        else:
+                            cell.alignment = align_right
+                            cell.number_format = '#,##0.00'
+
+                    current_row += 1
+
+                # Write Total Row
+                ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=4)
+                total_label = ws.cell(row=current_row, column=1, value="TOTAL SÉLECTION")
+                total_label.font = font_total
+                total_label.alignment = align_left
+                total_label.fill = fill_total
+
+                # Fill standard cell styles for merged region borders
+                for c in range(1, 5):
+                    ws.cell(row=current_row, column=c).border = total_border
+                    ws.cell(row=current_row, column=c).fill = fill_total
+
+                totals = {
+                    5: total_pv,
+                    6: total_real,
+                    7: total_est,
+                    8: total_gap,
+                    9: total_p_real,
+                    10: total_p_est
+                }
+
+                for col_idx, val in totals.items():
+                    cell = ws.cell(row=current_row, column=col_idx, value=val)
+                    cell.font = font_total
+                    cell.fill = fill_total
+                    cell.alignment = align_right
+                    cell.number_format = '#,##0.00'
+                    cell.border = total_border
+
+            else:
+                # SUMMARY ECONOMY EXPORT
+                filename = "analyse_ecart_amortissement.xlsx"
+                title_text = "Synthèse Globale des Écarts d'Amortissement"
+
+                # Title Block
+                ws.merge_cells("A1:I2")
+                title_cell = ws["A1"]
+                title_cell.value = title_text
+                title_cell.font = font_title
+                title_cell.fill = fill_title
+                title_cell.alignment = align_center
+
+                # Subtitle Block (parameters)
+                ws.merge_cells("A3:I3")
+                sub_cell = ws["A3"]
+                date_param = request.args.get("date") or "Toutes dates"
+                gran_param = request.args.get("gran") or "mensuelle"
+                sub_cell.value = f"Date cible: {date_param} | Granularité: {gran_param} | Généré le: {datetime.now().strftime('%d/%m/%Y %H:%M')}"
+                sub_cell.font = font_subtitle
+                sub_cell.fill = fill_title
+                sub_cell.alignment = align_center
+
+                headers = [
+                    "Société", "Catégorie", "Nombre d'Immo", "Valeur Brute", 
+                    "Amorti Réel", "Amorti Estimé", "Écart (Charge/Produit)", 
+                    "Dotation Période Réelle", "Dotation Période Estimée"
+                ]
+
+                # Set row heights
+                ws.row_dimensions[1].height = 18
+                ws.row_dimensions[2].height = 18
+                ws.row_dimensions[3].height = 16
+                ws.row_dimensions[5].height = 24 # Header row
+
+                # Write headers
+                for col_idx, header in enumerate(headers, 1):
+                    cell = ws.cell(row=5, column=col_idx, value=header)
+                    cell.font = font_header
+                    cell.fill = fill_header
+                    cell.alignment = align_center
+                    cell.border = thin_border
+
+                # Write data
+                current_row = 6
+                total_count = 0
+                total_pv = 0.0
+                total_real = 0.0
+                total_est = 0.0
+                total_gap = 0.0
+                total_p_real = 0.0
+                total_p_est = 0.0
+
+                for row in economy_list:
+                    count = row.get('count') or 0
+                    pv = row.get('total_pv') or 0.0
+                    real = row.get('real') or 0.0
+                    est = row.get('estimated') or 0.0
+                    gap = row.get('gap') or (real - est)
+                    p_real = row.get('period_old') or 0.0
+                    p_est = row.get('period_new') or 0.0
+
+                    total_count += count
+                    total_pv += pv
+                    total_real += real
+                    total_est += est
+                    total_gap += gap
+                    total_p_real += p_real
+                    total_p_est += p_est
+
+                    row_vals = [
+                        row.get('company') or "",
+                        row.get('category') or "",
+                        count,
+                        pv,
+                        real,
+                        est,
+                        gap,
+                        p_real,
+                        p_est
+                    ]
+
+                    for col_idx, val in enumerate(row_vals, 1):
+                        cell = ws.cell(row=current_row, column=col_idx, value=val)
+                        cell.font = font_data
+                        cell.border = thin_border
+                        
+                        # Formatting and alignment
+                        if col_idx in [1, 2]:
+                            cell.alignment = align_left
+                        elif col_idx in [3]:
+                            cell.alignment = align_center
+                            cell.number_format = '#,##0'
+                        else:
+                            cell.alignment = align_right
+                            cell.number_format = '#,##0.00'
+
+                    current_row += 1
+
+                # Write Total Row
+                ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=2)
+                total_label = ws.cell(row=current_row, column=1, value="TOTAL SYNTHÈSE")
+                total_label.font = font_total
+                total_label.alignment = align_left
+                total_label.fill = fill_total
+
+                # Fill standard cell styles for merged region borders
+                for c in range(1, 3):
+                    ws.cell(row=current_row, column=c).border = total_border
+                    ws.cell(row=current_row, column=c).fill = fill_total
+
+                totals = {
+                    3: total_count,
+                    4: total_pv,
+                    5: total_real,
+                    6: total_est,
+                    7: total_gap,
+                    8: total_p_real,
+                    9: total_p_est
+                }
+
+                for col_idx, val in totals.items():
+                    cell = ws.cell(row=current_row, column=col_idx, value=val)
+                    cell.font = font_total
+                    cell.fill = fill_total
+                    cell.alignment = align_right if col_idx != 3 else align_center
+                    cell.number_format = '#,##0.00' if col_idx != 3 else '#,##0'
+                    cell.border = total_border
+
+            # Auto-adjust column widths dynamically
+            for col in ws.columns:
+                max_len = 0
+                for cell in col:
+                    # Skip merged title and subtitle cell length calculations
+                    if cell.row in [1, 2, 3]:
+                        continue
+                    if cell.value is not None:
+                        val_str = str(cell.value)
+                        # Add padding for currency formatting or numbers
+                        if isinstance(cell.value, (int, float)):
+                            val_str = f"{cell.value:,.2f}"
+                        max_len = max(max_len, len(val_str))
+                col_letter = get_column_letter(col[0].column)
+                ws.column_dimensions[col_letter].width = max(max_len + 4, 12)
+
+            # Save in-memory and send
+            out = io.BytesIO()
+            wb.save(out)
+            out.seek(0)
+
+            return send_file(
+                out,
+                mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                as_attachment=True,
+                download_name=filename
+            )
 
         return jsonify({
             "gap_by_category": gap_list,
@@ -1134,7 +1438,7 @@ def api_cache_status():
 
 if __name__ == "__main__":
     print("=" * 55)
-    print("  Amortissement - Interface Web")
+    print("  Asset Estimator - HASNAOUI GROUPE")
     print("  Ouvrir : http://localhost:5000")
     print("=" * 55)
     app.run(debug=True, port=5000)

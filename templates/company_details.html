@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Amortissement — Détails Société</title>
+  <title>Asset Estimator — HASNAOUI GROUPE</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
   <script src="https://unpkg.com/feather-icons"></script>
@@ -44,16 +44,22 @@
     .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; box-shadow: var(--shadow); margin-bottom: 24px; }
     
     /* Filters Bar */
-    .filters-row { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; margin-bottom: 16px; }
+    .filters-container { display: flex; flex-direction: column; gap: 20px; }
+    .filters-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; align-items: flex-end; }
     .field { display: flex; flex-direction: column; gap: 6px; }
-    .field label { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; }
+    .field label { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
     select, input[type=text] {
-      background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; color: var(--text);
-      font-family: 'Inter', sans-serif; font-size: 13px; padding: 10px 14px; outline: none; transition: all .2s;
+      width: 100%;
+      background: var(--surface2); border: 1px solid var(--border); border-radius: 12px; color: var(--text);
+      font-family: 'Inter', sans-serif; font-size: 13px; padding: 11px 16px; outline: none; transition: all .2s;
     }
     select:focus, input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-light); }
-    .btn-apply { background: var(--accent); color: white; border: none; border-radius: 10px; padding: 10px 20px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all .2s; }
-    .btn-apply:hover { background: var(--accent-hover); transform: translateY(-1px); }
+    .btn-apply {
+      height: 44px; background: var(--accent); color: white; border: none; border-radius: 12px;
+      padding: 0 24px; font-size: 14px; font-weight: 700; cursor: pointer; transition: all .2s;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+    }
+    .btn-apply:hover { background: var(--accent-hover); transform: translateY(-2px); box-shadow: 0 6px 16px var(--accent-light); }
 
     /* Table */
     .table-wrap { overflow-x: auto; border-radius: 12px; border: 1px solid var(--border); }
@@ -96,7 +102,10 @@
   <div class="header">
     <div>
       <a href="/dashboard" class="btn-back"><i data-feather="arrow-left" style="width:18px;"></i> Retour au Dashboard</a>
-      <h1 id="title-company" style="margin-top: 16px; font-size: 24px; font-weight: 700;">Détails Société</h1>
+      <div style="display:flex; align-items:center; gap:12px; margin-top:16px;">
+        <img src="/static/logo.png" style="width:32px; height:32px; border-radius:8px;" />
+        <h1 id="title-company" style="font-size: 24px; font-weight: 700; margin:0;">Analyse Détails</h1>
+      </div>
       <p id="subtitle" style="color: var(--text-muted); font-size: 13px; margin-top: 4px;"></p>
     </div>
     <div id="summary-stats" style="display: flex; gap: 40px;">
@@ -106,24 +115,59 @@
   </div>
 
   <div class="card">
-    <div class="filters-row">
-      <div class="field">
-        <label>Date (JJ/MM/AAAA)</label>
-        <input type="text" id="f-date" placeholder="ex: 31/12/2025" />
+    <div class="card-title">
+      <div style="display:flex; align-items:center; gap:12px;">
+        <div style="background: var(--accent-light); padding: 8px; border-radius: 10px;">
+          <i data-feather="filter" style="width: 16px; height: 16px; color: var(--accent);"></i>
+        </div>
+        <span style="font-size: 15px; font-weight: 700;">Configuration de l'analyse</span>
       </div>
-      <div class="field">
-        <label>Granularité</label>
-        <select id="f-gran">
-          <option value="monthly">Mensuelle</option>
-          <option value="daily">Journalière</option>
-          <option value="yearly">Annuelle</option>
-        </select>
+    </div>
+    
+    <div class="filters-container">
+      <!-- Row 1: Basic Filters -->
+      <div class="filters-row" style="margin-bottom: 16px;">
+        <div class="field">
+          <label>Date cible</label>
+          <input type="text" id="f-date" placeholder="ex: 31/12/2025" />
+        </div>
+        <div class="field">
+          <label>Granularité</label>
+          <select id="f-gran">
+            <option value="monthly">Mensuelle</option>
+            <option value="daily">Journalière</option>
+            <option value="yearly">Annuelle</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>État d'amortissement</label>
+          <div style="height: 44px; display: flex; align-items: center; gap: 10px;">
+            <input type="checkbox" id="f-non-amortie" style="width: 20px; height: 20px; cursor: pointer;" />
+            <label for="f-non-amortie" style="cursor: pointer; font-size: 13px; color: var(--text); text-transform: none; letter-spacing: 0;">Exclure amorties</label>
+          </div>
+        </div>
+        <div></div> <!-- Column 4 spacer -->
       </div>
-      <div class="field" style="flex-direction: row; align-items: center; gap: 8px; padding-bottom: 10px;">
-        <input type="checkbox" id="f-non-amortie" style="width: 18px; height: 18px; cursor: pointer;" />
-        <label for="f-non-amortie" style="cursor: pointer; text-transform: none; font-size: 13px; color: var(--text);">Exclure amorties</label>
+
+      <!-- Row 2: Year Reference Filters & Apply Button -->
+      <div class="filters-row">
+        <div class="field">
+          <label>Référence Année</label>
+          <select id="f-year-debut-type">
+            <option value="start_date">Début d'amortissement</option>
+            <option value="purchase_date">Date d'acquisition</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Année spécifique</label>
+          <input type="text" id="f-year-debut" placeholder="ex: 2025" />
+        </div>
+        <div></div> <!-- Column 3 spacer -->
+        <button class="btn-apply" onclick="loadDetails()">
+          <i data-feather="refresh-cw" style="width: 16px; height: 16px;"></i>
+          Actualiser
+        </button>
       </div>
-      <button class="btn-apply" onclick="loadDetails()">Actualiser</button>
     </div>
   </div>
 
@@ -173,9 +217,9 @@
     document.getElementById('f-date').value = params.get('date') || '';
     document.getElementById('f-gran').value = params.get('gran') || 'monthly';
     document.getElementById('f-non-amortie').checked = params.get('non_amortie') === 'true';
+    document.getElementById('f-year-debut-type').value = params.get('year_debut_type') || 'start_date';
+    document.getElementById('f-year-debut').value = params.get('year_debut') || '';
     const catIds = params.get('cat_ids');
-    const yDebut = params.get('year_debut');
-    const yType = params.get('year_debut_type');
 
     document.getElementById('title-company').textContent = 'Analyse Détails : ' + (societe || 'Société Inconnue');
 
@@ -190,8 +234,14 @@
       const date = document.getElementById('f-date').value.trim();
       const gran = document.getElementById('f-gran').value;
       const nonAmortie = document.getElementById('f-non-amortie').checked;
+      const yDebut = document.getElementById('f-year-debut').value.trim();
+      const yType = document.getElementById('f-year-debut-type').value;
       
-      document.getElementById('subtitle').textContent = `Période: ${date || 'Toutes dates'} | Granularité: ${gran} | Exclure amorties: ${nonAmortie ? 'Oui' : 'Non'}`;
+      let sub = `Période: ${date || 'Toutes dates'} | Granularité: ${gran} | Exclure amorties: ${nonAmortie ? 'Oui' : 'Non'}`;
+      if (yDebut) {
+        sub += ` | Réf: ${yType === 'start_date' ? "Début" : "Acquisition"} ${yDebut}`;
+      }
+      document.getElementById('subtitle').textContent = sub;
 
       try {
         let url = `/api/dashboard?societe=${encodeURIComponent(societe)}&date=${date}&gran=${gran}&non_amortie=${nonAmortie}`;
@@ -299,8 +349,10 @@
       const date = document.getElementById('f-date').value.trim();
       const gran = document.getElementById('f-gran').value;
       const nonAmortie = document.getElementById('f-non-amortie').checked;
+      const yDebut = document.getElementById('f-year-debut').value.trim();
+      const yType = document.getElementById('f-year-debut-type').value;
       
-      let url = `/api/dashboard?societe=${encodeURIComponent(societe)}&date=${date}&gran=${gran}&non_amortie=${nonAmortie}&export=csv`;
+      let url = `/api/dashboard?societe=${encodeURIComponent(societe)}&date=${date}&gran=${gran}&non_amortie=${nonAmortie}&export=excel`;
       if (catIds) url += `&cat_ids=${catIds}`;
       if (yDebut) url += `&year_debut=${yDebut}&year_debut_type=${yType}`;
       
@@ -324,6 +376,14 @@
     });
 
     loadDetails();
+
+    function toggleFilters() {
+      const body = document.getElementById('filter-body');
+      const chev = document.getElementById('filter-chevron');
+      const isHidden = body.style.display === 'none' || body.style.display === '';
+      body.style.display = isHidden ? 'block' : 'none';
+      chev.style.transform = isHidden ? 'rotate(180deg)' : 'rotate(0deg)';
+    }
   </script>
 </body>
 </html>

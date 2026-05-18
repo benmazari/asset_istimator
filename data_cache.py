@@ -122,21 +122,4 @@ class DataCache:
 # Global Singleton
 global_cache = DataCache()
 
-def cache_worker(cfg):
-    while True:
-        try:
-            print("[CACHE] Lancement de l'actualisation des donnees en arriere-plan...")
-            global_cache.refresh(cfg)
-            if global_cache.error:
-                print(f"[CACHE] Erreur: {global_cache.error}")
-            else:
-                print(f"[CACHE] Actualisation terminee. Actifs: {len(global_cache.assets)}, Lignes chargees.")
-        except Exception as e:
-            print(f"[CACHE] Erreur inattendue du worker: {e}")
-            
-        time.sleep(86400)
-
-def start_cache_thread(cfg):
-    t = threading.Thread(target=cache_worker, args=(cfg,), daemon=True)
-    t.start()
-    return t
+# Worker and thread starter removed. Manual refresh is handled via api_refresh_cache in ui.py.
