@@ -338,6 +338,24 @@ def generate(
     with open(cfg_path, encoding="utf-8") as f:
         cfg = yaml.safe_load(f)
 
+    # Load all categories from config to populate VIRTUAL_OVERRIDES globally
+    all_cats = cfg.get("categories", []) or []
+    has_virtual = any(c.get("is_virtual") for c in all_cats)
+    if not has_virtual:
+        all_cats = list(all_cats) + [
+            {"ids": [-1], "label": "Bâtiments d'habitation", "years": 50, "is_virtual": True, "asset_ids": [245131, 245132, 245133]},
+            {"ids": [-2], "label": "PRESSES ET COMPRESSEUR", "years": 10, "is_virtual": True, "asset_ids": [246689, 247684, 247904]}
+        ]
+
+    global VIRTUAL_OVERRIDES
+    VIRTUAL_OVERRIDES = {}
+    for c in all_cats:
+        if c.get("is_virtual"):
+            lbl = c.get("label")
+            yrs = c.get("years", 10)
+            for aid in c.get("asset_ids", []):
+                VIRTUAL_OVERRIDES[aid] = {"label": lbl, "years": yrs}
+
     conn = get_connection(cfg["database"])
     results = {}
     output_file = None
@@ -359,8 +377,10 @@ def generate(
 
             # ── 1. Fetch asset master rows ────────────────────────────────────
             v_aids = []
-            if -1 in cat_ids: v_aids.extend([245131, 245132, 245133])
-            if -2 in cat_ids: v_aids.extend([246689, 247684, 247904])
+            for cid in cat_ids:
+                for c in categories:
+                    if c.get("is_virtual") and c["ids"][0] == cid:
+                        v_aids.extend(c.get("asset_ids", []))
             virtual_filter = f"OR aaat.id = ANY(ARRAY{v_aids})" if v_aids else ""
 
             asset_filter = "AND aaat.id = %s" if asset_id else ""
@@ -498,6 +518,10 @@ def generate(
                     eff_label = VIRTUAL_OVERRIDES[asset_id_immo]["label"]
                     asset["Catégorie d'immobilisation"] = eff_label
 
+                # Avoid duplicate rows by skipping virtual overrides when processing their base standard categories
+                if eff_label != label:
+                    continue
+
                 # Pre-compute daily rates for this asset
                 pv        = float(asset.get("Valeur brute") or 0)
                 old_yrs   = float(asset.get("Durée d'amortissement (Odoo)") or 0)
@@ -535,6 +559,7 @@ def generate(
                             "Amortissement courant estimé":      sched["base_amount"],
                             "Montant déjà amorti estimé":        sched["cum_estimated"],
                             "Période suivante estimée":          sched["remaining_estimated"],
+                            "Écart (Réel - Estimé)":             round(float(real.get("amount") or 0.0) - float(sched["base_amount"] or 0.0), 2),
                         })
 
                 # ── Daily schedule ───────────────────────────────────────────
@@ -568,6 +593,7 @@ def generate(
                             "Amortissement journalier estimé":    sched["base_amount"],
                             "Montant déjà amorti estimé (cumulé)": sched["cum_estimated"],
                             "Période suivante estimée":           sched["remaining_estimated"],
+                            "Écart (Réel - Estimé)":             round(float(real.get("amount") or 0.0) - float(sched["base_amount"] or 0.0), 2),
                         })
 
                 # ── Yearly schedule ──────────────────────────────────────────
@@ -601,6 +627,7 @@ def generate(
                             "Amortissement annuel estimé":        sched["base_amount"],
                             "Montant déjà amorti estimé":         sched["cum_estimated"],
                             "Période suivante estimée":           sched["remaining_estimated"],
+                            "Écart (Réel - Estimé)":             round(float(real.get("amount") or 0.0) - float(sched["base_amount"] or 0.0), 2),
                         })
 
                 if progress_fn:

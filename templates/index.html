@@ -317,6 +317,34 @@
       background: rgba(245,158,11,.1); border: 1px solid rgba(245,158,11,.2);
       font-size: 12px; color: var(--warn); display: none; margin-bottom: 16px;
     }
+
+    .cat-filter-pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+    .cat-pill {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      padding: 6px 12px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .cat-pill:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+    .cat-pill.active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: white;
+      box-shadow: 0 4px 12px var(--accent-light);
+    }
   </style>
 </head>
 <body>
@@ -334,6 +362,7 @@
       <a href="/" class="active"><i data-feather="settings"></i> Générateur</a>
       <a href="/dashboard"><i data-feather="pie-chart"></i> Tableau de bord</a>
       <a href="/economy"><i data-feather="trending-up"></i> Analyse d'Économie</a>
+      <a href="/config"><i data-feather="sliders"></i> Configuration</a>
     </nav>
     <div style="flex:1;"></div>
     <div class="sidebar-cta">
@@ -504,14 +533,14 @@
             </div>
             <div class="card-body" style="display: flex; flex-direction: column; overflow: hidden; padding-bottom: 20px;">
               <div class="field">
-                <label style="margin-bottom:4px;">Filtrer les Catégories <span style="font-size:10px;font-weight:normal;">(Maintenez CTRL pour choix multiple)</span></label>
-                <select id="sel-change-filter" multiple size="5" style="height: auto; padding: 6px;" onchange="filterIndexCategories()">
-                  <option value="all">Toutes les catégories</option>
-                  <option value="modified" selected>Uniquement modifiées</option>
-                  <option value="unmodified">Uniquement non-modifiées</option>
-                  <option value="real">Catégories réelles (BD)</option>
-                  <option value="virtual">Catégories virtuelles</option>
-                </select>
+                <label style="margin-bottom:8px;">Filtrer les Catégories</label>
+                <div class="cat-filter-pills" id="cat-filter-pills">
+                  <button class="cat-pill" data-value="all" onclick="toggleFilterPill(this)">Toutes</button>
+                  <button class="cat-pill active" data-value="modified" onclick="toggleFilterPill(this)">Modifiées</button>
+                  <button class="cat-pill" data-value="unmodified" onclick="toggleFilterPill(this)">Non-modifiées</button>
+                  <button class="cat-pill" data-value="real" onclick="toggleFilterPill(this)">Réelles (BD)</button>
+                  <button class="cat-pill" data-value="virtual" onclick="toggleFilterPill(this)">Virtuelles</button>
+                </div>
               </div>
               <div class="sel-row">
                 <button class="btn-xs" id="btn-all">Tout cocher</button>
@@ -606,7 +635,7 @@
       const cfg = await r.json();
       catData   = cfg.categories || [];
       buildCats(catData);
-      updateCatStat();
+      filterIndexCategories();
 
       const db = cfg.db || {};
       document.getElementById('db-badge').textContent =
@@ -645,9 +674,30 @@
     });
   }
 
+  function toggleFilterPill(btn) {
+    const val = btn.getAttribute('data-value');
+    if (val === 'all') {
+      const isAllActive = btn.classList.contains('active');
+      document.querySelectorAll('.cat-pill').forEach(p => p.classList.remove('active'));
+      if (!isAllActive) {
+        btn.classList.add('active');
+      } else {
+        document.querySelector('.cat-pill[data-value="modified"]').classList.add('active');
+      }
+    } else {
+      document.querySelector('.cat-pill[data-value="all"]').classList.remove('active');
+      btn.classList.toggle('active');
+      
+      const activePills = document.querySelectorAll('.cat-pill.active');
+      if (activePills.length === 0) {
+        document.querySelector('.cat-pill[data-value="modified"]').classList.add('active');
+      }
+    }
+    filterIndexCategories();
+  }
+
   function filterIndexCategories() {
-    const selEl = document.getElementById('sel-change-filter');
-    const selOpts = [...selEl.selectedOptions].map(o => o.value);
+    const activePills = [...document.querySelectorAll('.cat-pill.active')].map(p => p.getAttribute('data-value'));
     
     document.querySelectorAll('.cat-item').forEach(el => {
       const label = el.dataset.label;
@@ -657,13 +707,13 @@
       const isModified = cat.old_years !== undefined && cat.old_years !== cat.years && !cat.is_virtual;
       
       let show = false;
-      if (selOpts.includes('all')) {
+      if (activePills.includes('all')) {
         show = true;
       } else {
-        if (selOpts.includes('modified') && isModified) show = true;
-        if (selOpts.includes('unmodified') && !isModified && !cat.is_virtual) show = true;
-        if (selOpts.includes('real') && !cat.is_virtual) show = true;
-        if (selOpts.includes('virtual') && cat.is_virtual) show = true;
+        if (activePills.includes('modified') && isModified) show = true;
+        if (activePills.includes('unmodified') && !isModified && !cat.is_virtual) show = true;
+        if (activePills.includes('real') && !cat.is_virtual) show = true;
+        if (activePills.includes('virtual') && cat.is_virtual) show = true;
       }
       
       el.style.display = show ? 'flex' : 'none';

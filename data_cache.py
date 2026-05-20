@@ -25,11 +25,20 @@ class DataCache:
         try:
             conn = get_connection(cfg["database"])
             
-            # Virtual overrides mapping
-            v_map = {
-                245131: -1, 245132: -1, 245133: -1,
-                246689: -2, 247684: -2, 247904: -2
-            }
+            # Virtual overrides mapping dynamically loaded from config
+            v_map = {}
+            for cat in cfg.get("categories", []):
+                if cat.get("is_virtual"):
+                    v_id = cat["ids"][0]
+                    for aid in cat.get("asset_ids", []):
+                        v_map[int(aid)] = v_id
+            
+            # Fallback if empty
+            if not v_map:
+                v_map = {
+                    245131: -1, 245132: -1, 245133: -1,
+                    246689: -2, 247684: -2, 247904: -2
+                }
             
             # 1. Fetch Assets (standard tuple cursor)
             with conn.cursor() as cur:

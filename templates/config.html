@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="fr" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Asset Estimator — Configuration</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <script src="https://unpkg.com/feather-icons"></script>
+
+  <style>
+    :root {
+      --bg: #f5f6fa;
+      --surface: #ffffff;
+      --surface2: #f8fafc;
+      --border: #e2e8f0;
+      --accent: #4f46e5;
+      --accent-hover: #4338ca;
+      --accent-light: #e0e7ff;
+      --text: #1e293b;
+      --text-muted: #64748b;
+      --ok: #22c55e;
+      --err: #ef4444;
+      --warn: #f59e0b;
+      --radius: 16px;
+      --shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
+    }
+
+    [data-theme="dark"] {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface2: #22263a;
+      --border: #2e3350;
+      --accent: #4f7df3;
+      --accent-hover: #3b66d5;
+      --accent-light: rgba(79,125,243,0.15);
+      --text: #e2e8f0;
+      --text-muted: #8892aa;
+      --shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      transition: background 0.3s ease, color 0.3s ease;
+    }
+
+    /* ── Sidebar ── */
+    .sidebar {
+      width: 260px;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      padding: 24px;
+      transition: background 0.3s ease, border 0.3s ease;
+      z-index: 10;
+    }
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 40px;
+    }
+    .logo h1 { font-size: 16px; font-weight: 700; color: var(--text); }
+    
+    .sidebar-nav {
+      display: flex; flex-direction: column; gap: 8px; flex: 1;
+    }
+    .sidebar-nav a {
+      display: flex; align-items: center; gap: 12px;
+      padding: 12px 16px;
+      text-decoration: none;
+      color: var(--text-muted);
+      font-weight: 500; font-size: 14px;
+      border-radius: 12px;
+      transition: all 0.2s;
+    }
+    .sidebar-nav a i { font-size: 18px; font-style: normal; width: 24px; text-align: center; }
+    .sidebar-nav a:hover { background: var(--surface2); color: var(--text); }
+    .sidebar-nav a.active { background: var(--accent); color: white; box-shadow: 0 4px 12px var(--accent-light); }
+    .sidebar-nav a.active i { color: white; }
+
+    .sidebar-cta {
+      background: var(--accent);
+      border-radius: 16px;
+      padding: 20px;
+      color: white;
+      text-align: center;
+      box-shadow: 0 8px 20px var(--accent-light);
+    }
+    .sidebar-cta h3 { font-size: 14px; font-weight: 600; margin-bottom: 6px; }
+    .sidebar-cta p { font-size: 11px; opacity: 0.8; margin-bottom: 12px; line-height: 1.4; }
+    
+    .btn-theme {
+      background: white; color: var(--accent);
+      border: none; border-radius: 20px;
+      padding: 8px 16px; font-size: 12px; font-weight: 600;
+      cursor: pointer; width: 100%; transition: transform 0.2s;
+    }
+    [data-theme="dark"] .btn-theme { background: #1e293b; color: white; }
+    .btn-theme:hover { transform: translateY(-2px); }
+
+    /* ── Main Content ── */
+    .main-wrapper {
+      flex: 1;
+      display: flex; flex-direction: column;
+      overflow: hidden;
+    }
+
+    .topbar {
+      height: 70px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 32px;
+      transition: background 0.3s ease, border 0.3s ease;
+    }
+    .page-title { font-size: 18px; font-weight: 700; color: var(--text); }
+    
+    .topbar-right {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+
+    .btn-save {
+      background: var(--ok);
+      color: white;
+      border: none;
+      border-radius: 12px;
+      padding: 10px 20px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.2s;
+      box-shadow: 0 4px 12px rgba(34, 197, 94, 0.2);
+    }
+    .btn-save:hover { background: #16a34a; transform: translateY(-2px); }
+
+    .content-area {
+      flex: 1;
+      padding: 32px;
+      overflow-y: auto;
+      display: grid;
+      grid-template-columns: 1fr 340px;
+      gap: 24px;
+    }
+
+    /* ── Cards & Layout ── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      box-shadow: var(--shadow);
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      transition: background 0.3s ease, border 0.3s ease;
+    }
+    
+    .card-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    /* ── Forms and Inputs ── */
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .form-group label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    
+    input[type="text"],
+    input[type="number"],
+    textarea {
+      width: 100%;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-family: inherit;
+      font-size: 13px;
+      transition: all 0.2s;
+    }
+    input[type="text"]:focus,
+    input[type="number"]:focus,
+    textarea:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-light);
+    }
+
+    textarea {
+      resize: vertical;
+      min-height: 80px;
+    }
+
+    .helper-text {
+      font-size: 11px;
+      color: var(--text-muted);
+      line-height: 1.4;
+    }
+
+    /* ── Table Styling ── */
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    th {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding: 12px 16px;
+      text-align: left;
+      border-bottom: 2px solid var(--border);
+      background: var(--surface2);
+    }
+    td {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: middle;
+    }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: var(--surface2); }
+
+    .badge {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      text-align: center;
+    }
+    .badge-real {
+      background: rgba(79, 70, 229, 0.1);
+      color: var(--accent);
+    }
+    .badge-virtual {
+      background: rgba(147, 51, 234, 0.1);
+      color: #9333ea;
+    }
+
+    .btn-action {
+      background: none;
+      border: none;
+      color: var(--err);
+      cursor: pointer;
+      padding: 6px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+    }
+    .btn-action:hover {
+      background: rgba(239, 68, 68, 0.1);
+    }
+
+    .btn-add {
+      background: var(--accent);
+      color: white;
+      border: none;
+      border-radius: 10px;
+      padding: 10px 16px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: all 0.2s;
+    }
+    .btn-add:hover {
+      background: var(--accent-hover);
+      transform: translateY(-1px);
+    }
+
+    .search-container {
+      position: relative;
+    }
+    .search-container i {
+      position: absolute;
+      left: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-muted);
+      width: 16px; height: 16px;
+    }
+    .search-input {
+      padding-left: 36px !important;
+    }
+
+    /* ── Notifications ── */
+    .toast-container {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      z-index: 1000;
+    }
+    .toast {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+      padding: 16px 20px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 13px;
+      font-weight: 500;
+      animation: slideIn 0.3s forwards ease-out;
+      border-left: 4px solid var(--accent);
+    }
+    .toast.success { border-left-color: var(--ok); }
+    .toast.error { border-left-color: var(--err); }
+    .toast i { width: 18px; height: 18px; }
+    .toast.success i { color: var(--ok); }
+    .toast.error i { color: var(--err); }
+
+    @keyframes slideIn {
+      from { transform: translateX(100%); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+
+    /* ── Loading Overlay ── */
+    .loading {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(255, 255, 255, 0.7);
+      backdrop-filter: blur(4px);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 14px;
+    }
+    [data-theme="dark"] .loading { background: rgba(15, 17, 23, 0.7); }
+    .loading.show { display: flex; }
+    .spinner {
+      width: 40px; height: 40px;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin .8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+  <!-- Loading Overlay -->
+  <div class="loading" id="loading">
+    <div class="spinner"></div>
+    <div style="color:var(--text);font-size:14px;font-weight:500;" id="loading-text">Enregistrement des modifications…</div>
+  </div>
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="logo">
+      <img src="/static/logo.png" style="width:36px; height:36px; border-radius:10px; object-fit:cover;" />
+      <div style="display:flex; flex-direction:column; line-height:1.2;">
+        <h1 style="font-size:16px; margin:0; font-weight:700;">Asset Estimator</h1>
+        <span style="font-size:9px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px;">HASNAOUI GROUPE</span>
+      </div>
+    </div>
+    <nav class="sidebar-nav">
+      <a href="/"><i data-feather="settings"></i> Générateur</a>
+      <a href="/dashboard"><i data-feather="pie-chart"></i> Tableau de bord</a>
+      <a href="/economy"><i data-feather="trending-up"></i> Analyse d'Économie</a>
+      <a href="/config" class="active"><i data-feather="sliders"></i> Configuration</a>
+    </nav>
+    <div style="flex:1;"></div>
+    <div class="sidebar-cta">
+      <div class="cta-icon" style="margin-bottom: 8px;"><i data-feather="moon" style="width:24px; height:24px;"></i></div>
+      <h3>Dark Mode</h3>
+      <p>Basculez entre le thème clair et sombre</p>
+      <button class="btn-theme" onclick="toggleTheme()">Changer de thème</button>
+    </div>
+  </aside>
+
+  <!-- Main Wrapper -->
+  <div class="main-wrapper">
+    
+    <!-- Topbar -->
+    <header class="topbar">
+      <div class="page-title">Configuration des Catégories</div>
+      <div class="topbar-right">
+        <button class="btn-save" onclick="saveConfiguration()">
+          <i data-feather="save"></i> Enregistrer les modifications
+        </button>
+      </div>
+    </header>
+
+    <!-- Content Area -->
+    <main class="content-area">
+      
+      <!-- Left Card: Existing Categories list -->
+      <div class="card">
+        <div class="card-title">
+          <span>Liste des Catégories</span>
+          <div class="search-container" style="width: 250px;">
+            <i data-feather="search"></i>
+            <input type="text" class="search-input" id="search-cat" placeholder="Rechercher une catégorie..." oninput="filterCategories()" />
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 240px;">Libellé de la catégorie</th>
+                <th style="width: 100px;">Type</th>
+                <th style="width: 110px;">Durée Odoo (ans)</th>
+                <th style="width: 120px;">Nouvelle Durée (ans)</th>
+                <th>Immobilisations Virtuelles (IDs)</th>
+                <th style="width: 60px; text-align: center;">Action</th>
+              </tr>
+            </thead>
+            <tbody id="config-tbody">
+              <!-- Rendered via JS -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Right Card: Add Virtual Category -->
+      <div class="card" style="height: fit-content;">
+        <div class="card-title">Catégorie Virtuelle</div>
+        
+        <div class="form-group">
+          <label>Libellé de la catégorie</label>
+          <input type="text" id="v-label" placeholder="ex: Bâtiments d'habitation" />
+        </div>
+
+        <div class="form-group">
+          <label>Durée estimée (années)</label>
+          <input type="number" id="v-years" min="1" max="100" placeholder="ex: 50" />
+        </div>
+
+        <div class="form-group">
+          <label>IDs des immobilisations</label>
+          <textarea id="v-assets" placeholder="ex: 245131, 245132, 245133"></textarea>
+          <div class="helper-text">Séparez les IDs Odoo par des virgules. Ces immobilisations seront extraites et associées à cette catégorie virtuelle dans l'ensemble de l'application.</div>
+        </div>
+
+        <button class="btn-add" onclick="addVirtualCategory()">
+          <i data-feather="plus"></i> Ajouter la catégorie
+        </button>
+      </div>
+
+    </main>
+
+  </div>
+
+  <!-- Toast Container -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <script>
+    feather.replace();
+
+    let categories = [];
+    let dbConfig = {};
+    let outputFormat = 'excel';
+
+    // ── Theme Manager ──
+    function toggleTheme() {
+      const html = document.documentElement;
+      const current = html.getAttribute('data-theme');
+      const next = current === 'dark' ? 'light' : 'dark';
+      html.setAttribute('data-theme', next);
+      localStorage.setItem('theme', next);
+    }
+    const savedTheme = localStorage.getItem('theme') || 'light';
+    document.documentElement.setAttribute('data-theme', savedTheme);
+
+    // ── Toast Manager ──
+    function showToast(message, type = 'success') {
+      const container = document.getElementById('toast-container');
+      const toast = document.createElement('div');
+      toast.className = `toast ${type}`;
+      const icon = type === 'success' ? 'check-circle' : 'alert-circle';
+      toast.innerHTML = `<i data-feather="${icon}"></i> <span>${message}</span>`;
+      container.appendChild(toast);
+      feather.replace();
+      setTimeout(() => {
+        toast.style.animation = 'slideIn 0.3s reverse forwards ease-out';
+        setTimeout(() => toast.remove(), 300);
+      }, 3500);
+    }
+
+    // ── Load Config ──
+    async function loadConfig() {
+      document.getElementById('loading-text').innerText = "Chargement de la configuration…";
+      document.getElementById('loading').classList.add('show');
+      try {
+        const res = await fetch('/api/config');
+        if (!res.ok) throw new Error("Erreur de communication avec le serveur.");
+        const data = await res.json();
+        
+        categories = data.categories || [];
+        dbConfig = data.db || {};
+        outputFormat = data.output_format || 'excel';
+        
+        renderTable();
+      } catch (err) {
+        showToast(err.message, 'error');
+      } finally {
+        document.getElementById('loading').classList.remove('show');
+      }
+    }
+
+    // ── Render Table ──
+    function renderTable() {
+      const tbody = document.getElementById('config-tbody');
+      tbody.innerHTML = '';
+
+      categories.forEach((cat, index) => {
+        const tr = document.createElement('tr');
+        tr.setAttribute('data-cat-label', cat.label.toLowerCase());
+        
+        // Badges
+        const badgeClass = cat.is_virtual ? 'badge-virtual' : 'badge-real';
+        const badgeLabel = cat.is_virtual ? 'Virtuelle' : 'Réelle';
+        
+        // Inputs
+        const yearsVal = cat.years;
+        const odooYears = (cat.old_years != null && cat.old_years !== undefined)
+          ? cat.old_years + ' ans'
+          : '<span style="color:var(--text-muted);font-style:italic;">— (non amortissable)</span>';
+        
+        // Textarea for virtual assets
+        const assetsStr = cat.is_virtual ? (cat.asset_ids || []).join(', ') : '—';
+        
+        let tdAction = '—';
+        let tdAssets = `<td><span style="color: var(--text-muted); font-style: italic;">Système (Base de données)</span></td>`;
+        
+        if (cat.is_virtual) {
+          tdAction = `
+            <button class="btn-action" onclick="deleteVirtualCategory(${index})" title="Supprimer la catégorie virtuelle">
+              <i data-feather="trash-2" style="width: 16px; height: 16px;"></i>
+            </button>
+          `;
+          tdAssets = `
+            <td>
+              <textarea style="min-height: 40px; font-size:12px; padding: 6px 10px;" 
+                placeholder="245131, 245132" 
+                oninput="updateVirtualAssets(${index}, this.value)">${assetsStr}</textarea>
+            </td>
+          `;
+        }
+
+        tr.innerHTML = `
+          <td><strong>${cat.label}</strong></td>
+          <td><span class="badge ${badgeClass}">${badgeLabel}</span></td>
+          <td><span style="font-weight: 500;">${odooYears}</span></td>
+          <!-- odooYears may contain HTML (non amortissable span) -->
+          <td>
+            <input type="number" style="width: 80px; text-align: center;" 
+              value="${yearsVal}" min="1" max="100" 
+              oninput="updateCategoryYears(${index}, this.value)" />
+          </td>
+          ${tdAssets}
+          <td style="text-align: center;">${tdAction}</td>
+        `;
+        
+        tbody.appendChild(tr);
+      });
+      
+      feather.replace();
+    }
+
+    // ── Update values ──
+    function updateCategoryYears(index, val) {
+      const yrs = parseInt(val);
+      if (yrs > 0 && yrs <= 100) {
+        categories[index].years = yrs;
+      }
+    }
+
+    function updateVirtualAssets(index, val) {
+      const ids = val.split(',')
+                    .map(x => x.trim())
+                    .filter(x => x.length > 0 && !isNaN(x))
+                    .map(x => parseInt(x));
+      categories[index].asset_ids = ids;
+    }
+
+    // ── Delete Virtual Category ──
+    function deleteVirtualCategory(index) {
+      if (confirm(`Êtes-vous sûr de vouloir supprimer la catégorie virtuelle "${categories[index].label}" ?`)) {
+        categories.splice(index, 1);
+        renderTable();
+        showToast("Catégorie virtuelle retirée de la liste temporaire. Cliquez sur enregistrer pour valider.", "success");
+      }
+    }
+
+    // ── Add Virtual Category ──
+    function addVirtualCategory() {
+      const labelInput = document.getElementById('v-label');
+      const yearsInput = document.getElementById('v-years');
+      const assetsInput = document.getElementById('v-assets');
+      
+      const label = labelInput.value.trim();
+      const years = parseInt(yearsInput.value);
+      const assetsStr = assetsInput.value.trim();
+      
+      if (!label) {
+        showToast("Veuillez saisir un libellé pour la catégorie.", "error");
+        return;
+      }
+      
+      if (isNaN(years) || years < 1 || years > 100) {
+        showToast("Veuillez saisir une durée valide en années (entre 1 et 100).", "error");
+        return;
+      }
+      
+      // Parse asset IDs
+      const assetIds = assetsStr.split(',')
+                               .map(x => x.trim())
+                               .filter(x => x.length > 0 && !isNaN(x))
+                               .map(x => parseInt(x));
+                               
+      if (assetIds.length === 0) {
+        showToast("Veuillez spécifier au moins un ID d'immobilisation.", "error");
+        return;
+      }
+      
+      // Check duplicate label
+      if (categories.some(c => c.label.toLowerCase() === label.toLowerCase())) {
+        showToast("Une catégorie avec ce libellé existe déjà.", "error");
+        return;
+      }
+      
+      // Generate negative ID
+      const virtualIds = categories.filter(c => c.is_virtual && c.ids && c.ids[0] < 0).map(c => c.ids[0]);
+      const nextId = virtualIds.length > 0 ? Math.min(...virtualIds) - 1 : -1;
+      
+      const newCat = {
+        ids: [nextId],
+        label: label,
+        years: years,
+        default_years: years,
+        is_virtual: true,
+        asset_ids: assetIds
+      };
+      
+      categories.push(newCat);
+      renderTable();
+      
+      // Clear inputs
+      labelInput.value = '';
+      yearsInput.value = '';
+      assetsInput.value = '';
+      
+      showToast(`Catégorie virtuelle "${label}" ajoutée. Enregistrez les modifications pour appliquer.`, "success");
+    }
+
+    // ── Filter Table ──
+    function filterCategories() {
+      const search = document.getElementById('search-cat').value.toLowerCase().trim();
+      const rows = document.querySelectorAll('#config-tbody tr');
+      rows.forEach(row => {
+        const lbl = row.getAttribute('data-cat-label');
+        if (lbl.includes(search)) {
+          row.style.display = 'table-row';
+        } else {
+          row.style.display = 'none';
+        }
+      });
+    }
+
+    // ── Save Config ──
+    async function saveConfiguration() {
+      // Validate all categories have valid years
+      for (const cat of categories) {
+        // Allow years=0 for non-amortizable real categories (Terrain, Stock, etc.)
+        const minYears = (!cat.is_virtual && cat.old_years == null) ? 0 : 1;
+        if (isNaN(cat.years) || cat.years < minYears || cat.years > 200) {
+          showToast(`La durée de la catégorie "${cat.label}" est invalide.`, "error");
+          return;
+        }
+        if (cat.is_virtual && (!cat.asset_ids || cat.asset_ids.length === 0)) {
+          showToast(`La catégorie virtuelle "${cat.label}" doit posséder au moins un ID d'immobilisation.`, "error");
+          return;
+        }
+      }
+
+      document.getElementById('loading-text').innerText = "Enregistrement de la configuration et actualisation du cache…";
+      document.getElementById('loading').classList.add('show');
+      
+      try {
+        const payload = {
+          categories: categories
+        };
+        
+        const res = await fetch('/api/config', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(payload)
+        });
+        
+        if (!res.ok) {
+          const data = await res.json();
+          throw new Error(data.error || "Une erreur est survenue lors de l'enregistrement.");
+        }
+        
+        showToast("Configuration enregistrée avec succès! Cache et graphiques en cours de mise à jour.", "success");
+        
+        // Reload config to get refreshed database lookup if any
+        setTimeout(loadConfig, 1000);
+      } catch (err) {
+        showToast(err.message, 'error');
+        document.getElementById('loading').classList.remove('show');
+      }
+    }
+
+    // Initial load
+    window.addEventListener('load', loadConfig);
+  </script>
+</body>
+</html>

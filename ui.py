@@ -54,7 +54,21 @@ def _log(msg: str):
 def _load_config():
     path = os.path.join(SCRIPT_DIR, "config.yaml")
     with open(path, encoding="utf-8") as f:
-        return yaml.safe_load(f)
+        cfg = yaml.safe_load(f) or {}
+    
+    cats = cfg.get("categories", [])
+    if not isinstance(cats, list):
+        cats = []
+    
+    has_virtual = any(c.get("is_virtual") for c in cats)
+    if not has_virtual:
+        cats.extend([
+            {"ids": [-1], "label": "Bâtiments d'habitation", "years": 50, "is_virtual": True, "asset_ids": [245131, 245132, 245133], "default_years": 50.0},
+            {"ids": [-2], "label": "PRESSES ET COMPRESSEUR", "years": 10, "is_virtual": True, "asset_ids": [246689, 247684, 247904], "default_years": 10.0}
+        ])
+        cfg["categories"] = cats
+        
+    return cfg
 
 
 def _parse_flexible_date(d_str: str):
@@ -174,11 +188,44 @@ def _run_generation(categories, output_format, asset_id=None, societe=None, dep_
             j["log_q"].put(None)   # sentinel — stream ends
 
 
+def _get_virtual_category_mapping(all_cats):
+    """
+    Returns (v_map, v_aids_map)
+    v_map: asset_id -> virtual_cat_id
+    v_aids_map: virtual_cat_id -> list of asset_ids
+    """
+    v_map = {}
+    v_aids_map = {}
+    
+    # Add defaults if no virtual categories are present
+    has_virtual = any(c.get("is_virtual") for c in all_cats)
+    cats_to_parse = list(all_cats)
+    if not has_virtual:
+        cats_to_parse.extend([
+            {"ids": [-1], "label": "Bâtiments d'habitation", "years": 50, "is_virtual": True, "asset_ids": [245131, 245132, 245133]},
+            {"ids": [-2], "label": "PRESSES ET COMPRESSEUR", "years": 10, "is_virtual": True, "asset_ids": [246689, 247684, 247904]}
+        ])
+        
+    for cat in cats_to_parse:
+        if cat.get("is_virtual"):
+            v_id = cat["ids"][0]
+            aids = [int(aid) for aid in cat.get("asset_ids", [])]
+            v_aids_map[v_id] = aids
+            for aid in aids:
+                v_map[aid] = v_id
+    return v_map, v_aids_map
+
+
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @app.route("/")
 def index():
     return render_template("index.html")
+
+
+@app.route("/config")
+def config_page():
+    return render_template("config.html")
 
 
 @app.route("/api/config")
@@ -187,13 +234,24 @@ def api_config():
     try:
         cfg = _load_config()
         db = cfg["database"]
-        cats = cfg.get("categories", [])
+        all_cats = cfg.get("categories", [])
+
+        # Add defaults if no virtual categories are present
+        has_virtual = any(c.get("is_virtual") for c in all_cats)
+        if not has_virtual:
+            all_cats.extend([
+                {"ids": [-1], "label": "Bâtiments d'habitation", "years": 50, "is_virtual": True, "asset_ids": [245131, 245132, 245133]},
+                {"ids": [-2], "label": "PRESSES ET COMPRESSEUR", "years": 10, "is_virtual": True, "asset_ids": [246689, 247684, 247904]}
+            ])
+            
+        real_cats = [c for c in all_cats if not c.get("is_virtual")]
+        virtual_cats = [c for c in all_cats if c.get("is_virtual")]
 
         # Fetch old_years from DB
         try:
             conn = get_connection(db)
             all_cids = []
-            for c in cats:
+            for c in real_cats:
                 all_cids.extend(c.get("ids", []))
             if all_cids:
                 with conn.cursor() as cur:
@@ -203,26 +261,31 @@ def api_config():
                         WHERE id = ANY(%s)
                     """, [all_cids])
                     m_map = {r[0]: r[1] for r in cur.fetchall()}
-                for c in cats:
+                for c in real_cats:
                     cids = c.get("ids", [])
-                    if cids and cids[0] in m_map and m_map[cids[0]]:
+                    if cids and cids[0] in m_map and m_map[cids[0]] is not None:
                         c["old_years"] = round(float(m_map[cids[0]]) / 12.0, 2)
                     else:
-                        c["old_years"] = c.get("years", 10.0)
+                        # null method_number = non-amortizable in Odoo → show None (displayed as '—')
+                        c["old_years"] = None
             conn.close()
         except Exception as ex:
             # Fallback if DB is not reachable
-            for c in cats:
-                c["old_years"] = c.get("years", 10.0)
+            for c in real_cats:
+                c["old_years"] = c.get("years") or None
 
-        for c in cats:
+        for c in real_cats:
             c["is_virtual"] = False
+            c["asset_ids"] = []
 
-        virtual_cats = [
-            {"ids": [-1], "label": "Bâtiments d'habitation", "years": 50, "old_years": 50, "is_virtual": True},
-            {"ids": [-2], "label": "PRESSES ET COMPRESSEUR", "years": 10, "old_years": 10, "is_virtual": True}
-        ]
-        cats.extend(virtual_cats)
+        for c in virtual_cats:
+            c["is_virtual"] = True
+            # old_years for virtual = their configured years (they have no DB method_number)
+            c["old_years"] = c.get("years", 10.0)
+            if "asset_ids" not in c:
+                c["asset_ids"] = []
+
+        combined_cats = real_cats + virtual_cats
 
         return jsonify({
             "db": {
@@ -231,22 +294,37 @@ def api_config():
                 "dbname": db.get("dbname"),
                 "user": db.get("user"),
             },
-            "categories": cats,
+            "categories": combined_cats,
             "output_format": cfg.get("output", {}).get("format", "excel"),
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 
-
 @app.route("/api/config", methods=["POST"])
 def api_update_config():
     """Update config from web."""
     try:
-        new_cfg = request.json
+        payload = request.json or {}
+        categories_data = payload.get("categories", [])
+        
+        # Clean up temporary fields before saving
+        for c in categories_data:
+            c.pop("old_years", None)
+            if "asset_ids" in c:
+                c["asset_ids"] = [int(x) for x in c["asset_ids"] if str(x).strip().isdigit()]
+        
+        cfg = _load_config()
+        cfg["categories"] = categories_data
+        
         cfg_path = os.path.join(SCRIPT_DIR, "config.yaml")
         with open(cfg_path, "w", encoding="utf-8") as f:
-            yaml.dump(new_cfg, f, default_flow_style=False, allow_unicode=True)
+            yaml.dump(cfg, f, default_flow_style=False, allow_unicode=True)
+            
+        # Re-trigger data cache refresh in the background
+        from data_cache import global_cache
+        threading.Thread(target=global_cache.refresh, args=(cfg,), daemon=True).start()
+        
         return jsonify({"ok": True})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 400
@@ -480,9 +558,11 @@ def api_dashboard():
             lines = []
         else:
             # ── 1. Assets (minimal) ───────────────────────────────────────────────
+            v_map, v_aids_map = _get_virtual_category_mapping(all_cats)
             v_aids = []
-            if -1 in all_cat_ids: v_aids.extend([245131, 245132, 245133])
-            if -2 in all_cat_ids: v_aids.extend([246689, 247684, 247904])
+            for cid in all_cat_ids:
+                if cid in v_aids_map:
+                    v_aids.extend(v_aids_map[cid])
             v_clause = f"OR aaat.id = ANY(ARRAY{v_aids})" if v_aids else ""
 
             extra_params = [all_cat_ids]
@@ -509,7 +589,6 @@ def api_dashboard():
                     WHERE (aac.id = ANY(%s) {v_clause}) {sc} {af} {sf} {yf}
                 """, extra_params)
                 
-                v_map = {245131: -1, 245132: -1, 245133: -1, 246689: -2, 247684: -2, 247904: -2}
                 asset_rows = []
                 for r in cur.fetchall():
                     d = dict(r)
@@ -584,7 +663,7 @@ def api_dashboard():
                     real_by_cat_id = {}
                     real_by_company = {}
                     real_by_comp_cat_id = {}
-                    v_map = {245131: -1, 245132: -1, 245133: -1, 246689: -2, 247684: -2, 247904: -2}
+                    v_map, _ = _get_virtual_category_mapping(all_cats)
                     for r in cur.fetchall():
                         aid, cid, comp, amt = r[0], r[1], r[2], float(r[3] or 0)
                         if aid in v_map:
