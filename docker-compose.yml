@@ -8,7 +8,13 @@ services:
     ports:
       - "5000:5000"
     volumes:
+      # IMPORTANT: config.yaml must exist as a FILE on the host before starting.
+      # If Docker created it as a directory, run: sudo rm -rf ./config.yaml
+      # then copy your config.yaml file here, then: docker compose up -d
+      - type: bind
+        source: ./config.yaml
+        target: /app/config.yaml
+        read_only: true
       - ./output:/app/output
-      - ./config.yaml:/app/config.yaml
     environment:
       - TZ=Africa/Algiers
