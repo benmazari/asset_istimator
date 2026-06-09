@@ -31,13 +31,13 @@ def build_amortization_query(asset_ids: list = None) -> tuple:
 WITH asset_base AS (
     SELECT
         aaat.*,
-        (aaat.date_comptabilisation + make_interval(years => %s) - interval '1 day')::date
+        (aaat.date_comptabilisation + make_interval(months => CAST(%s * 12 AS integer)) - interval '1 day')::date
             AS end_date,
 
-        aaat.purchase_value /
+        aaat.unit_price /
         NULLIF(
             (
-                (aaat.date_comptabilisation + make_interval(years => %s) - interval '1 day')::date
+                (aaat.date_comptabilisation + make_interval(months => CAST(%s * 12 AS integer)) - interval '1 day')::date
                 - aaat.date_comptabilisation
             )::numeric,
             0
@@ -117,10 +117,10 @@ SELECT
     aaat.purchase_date          AS "Date d'acquisition",
     aaat.date_comptabilisation  AS "Date début d'amortissement",
     aaaf.name                   AS "Localisation",
-    gee.name                    AS "Equipement",
+    NULL::text                 AS "Equipement",
     aaat.unit_price             AS "Prix unitaire",
     aaat.costs                  AS "Autres frais",
-    aaat.purchase_value         AS "Valeur brute",
+    aaat.unit_price             AS "Valeur brute",
     aaat.tva_acquisition        AS "TVA d'acquisition",
     aaat.venal_value            AS "Valeur vénale",
     aaat.expert_value           AS "Valeur d'expertise",
@@ -130,17 +130,9 @@ SELECT
     aaat.state                  AS "Statut",
     aaat.num_serie              AS "Numéro de série",
 
-    compte_immo.code || ' ' || compte_immo.name
-        || ' (' || compte_immo_company.name || ')'
-        AS "Compte d'immobilisation",
-
-    compte_depreciation.code || ' ' || compte_depreciation.name
-        || ' (' || compte_depreciation_company.name || ')'
-        AS "Compte de dépréciation",
-
-    compte_expense_depreciation.code || ' ' || compte_expense_depreciation.name
-        || ' (' || compte_expense_depreciation_company.name || ')'
-        AS "Compte de dépréciation (charge)",
+    NULL::text AS "Compte d'immobilisation",
+    NULL::text AS "Compte de dépréciation",
+    NULL::text AS "Compte de dépréciation (charge)",
 
     aac.name                    AS "Catégorie d'immobilisation",
     aaat.dossier_complet        AS "Dossier complet",
@@ -152,8 +144,7 @@ SELECT
     res_currency.name           AS "Devise",
     fv.name                     AS "Véhicule",
 
-    (hr_employee.name_related || ' ' || hr_employee.firstname)
-        AS "Employé affecté",
+    NULL::text AS "Employé affecté",
 
     aaat.old_id                 AS "Ancien ID",
 
@@ -172,14 +163,14 @@ SELECT
     CASE
         WHEN ec.depreciation_date < ec.end_date
             THEN ec.base_amount
-        ELSE ec.purchase_value - COALESCE(ec.cum_before, 0)
+        ELSE ec.unit_price - COALESCE(ec.cum_before, 0)
     END AS "Amortissement courant estimé",
 
     SUM(
         CASE
             WHEN ec.depreciation_date < ec.end_date
                 THEN ec.base_amount
-            ELSE ec.purchase_value - COALESCE(ec.cum_before, 0)
+            ELSE ec.unit_price - COALESCE(ec.cum_before, 0)
         END
     ) OVER (
         PARTITION BY ec.id
@@ -188,12 +179,12 @@ SELECT
 
     GREATEST(
         0,
-        ec.purchase_value -
+        ec.unit_price -
         SUM(
             CASE
                 WHEN ec.depreciation_date < ec.end_date
                     THEN ec.base_amount
-                ELSE ec.purchase_value - COALESCE(ec.cum_before, 0)
+                ELSE ec.unit_price - COALESCE(ec.cum_before, 0)
             END
         ) OVER (
             PARTITION BY ec.id
@@ -210,14 +201,10 @@ LEFT JOIN real_lines rl
 
 LEFT JOIN account_asset_category aac
     ON aaat.category_id = aac.id
-LEFT JOIN gmao_equipment_equipment gee
-    ON aaat.equipement_id = gee.id
 LEFT JOIN fleet_vehicle fv
     ON aaat.vehicle_id = fv.id
 LEFT JOIN account_asset_affectation aaaf
     ON aaat.affectation_id = aaaf.id
-LEFT JOIN hr_employee
-    ON aaat.employee_affected_id = hr_employee.id
 LEFT JOIN res_currency
     ON aaat.currency_id = res_currency.id
 
@@ -228,20 +215,7 @@ LEFT JOIN asset_center_cout acck
 LEFT JOIN res_company rc_cout
     ON acck.company_id = rc_cout.id
 
-LEFT JOIN account_account compte_immo
-    ON compte_immo.id = aaat.account_asset_id
-LEFT JOIN res_company compte_immo_company
-    ON compte_immo_company.id = compte_immo.company_id
 
-LEFT JOIN account_account compte_depreciation
-    ON compte_depreciation.id = aaat.account_depreciation_id
-LEFT JOIN res_company compte_depreciation_company
-    ON compte_depreciation_company.id = compte_depreciation.company_id
-
-LEFT JOIN account_account compte_expense_depreciation
-    ON compte_expense_depreciation.id = aaat.account_expense_depreciation_id
-LEFT JOIN res_company compte_expense_depreciation_company
-    ON compte_expense_depreciation_company.id = compte_expense_depreciation.company_id
 
 ORDER BY ec.depreciation_date
 """

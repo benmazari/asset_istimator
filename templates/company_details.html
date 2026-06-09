@@ -152,15 +152,15 @@
       <!-- Row 2: Year Reference Filters & Apply Button -->
       <div class="filters-row">
         <div class="field">
-          <label>Référence Année</label>
+          <label>Référence Année / Date</label>
           <select id="f-year-debut-type">
             <option value="start_date">Début d'amortissement</option>
             <option value="purchase_date">Date d'acquisition</option>
           </select>
         </div>
         <div class="field">
-          <label>Année spécifique</label>
-          <input type="text" id="f-year-debut" placeholder="ex: 2025" />
+          <label>Année (AAAA) ou Date (JJ/MM/AAAA)</label>
+          <input type="text" id="f-year-debut" placeholder="ex: 2025 ou 31/12/2025" />
         </div>
         <div></div> <!-- Column 3 spacer -->
         <button class="btn-apply" onclick="loadDetails()">
@@ -195,6 +195,7 @@
             <th style="text-align: right;">Réel Amorti</th>
             <th style="text-align: right;">Estimé Amorti</th>
             <th style="text-align: center;">Écart</th>
+            <th style="text-align: center;">Écart Courant</th>
             <th style="text-align: right;">Pér. Réel</th>
             <th style="text-align: right;">Pér. Estimé</th>
           </tr>
@@ -254,8 +255,12 @@
         allAssets = data.asset_details || [];
         renderTable(allAssets);
         
+        // Find the actual company from the response, falling back to URL parameter
+        const actualCompany = (data.gap_by_company && data.gap_by_company.length > 0) ? data.gap_by_company[0].company : societe;
+        document.getElementById('title-company').textContent = 'Analyse Détails : ' + actualCompany;
+
         // Update stats
-        const comp = (data.gap_by_company || []).find(x => x.company === societe) || {count:0, gap:0};
+        const comp = (data.gap_by_company || []).find(x => x.company === actualCompany) || {count:0, gap:0};
         document.getElementById('stat-count').textContent = comp.count;
         document.getElementById('stat-gap').textContent = fmt(comp.gap) + ' DA';
         document.getElementById('stat-gap').style.color = (comp.gap >= 0) ? 'var(--ok)' : 'var(--err)';
@@ -299,6 +304,10 @@
         const sign = gap > 0 ? '+' : '';
         const cls = gap >= 0 ? 'gap-pos' : 'gap-neg';
 
+        const gap_courant = g.p_real - g.p_est;
+        const sign_courant = gap_courant > 0 ? '+' : '';
+        const cls_courant = gap_courant >= 0 ? 'gap-pos' : 'gap-neg';
+
         html += `
           <tr class="group-row" onclick="toggleGroup(${groupIdx})" id="group-${groupIdx}">
             <td><span class="toggle-icon">▶</span> ${catName}</td>
@@ -307,6 +316,7 @@
             <td style="text-align: right;">${fmt(g.real)}</td>
             <td style="text-align: right;">${fmt(g.est)}</td>
             <td style="text-align: center;"><span class="badge ${cls}">${sign}${fmt(gap)}</span></td>
+            <td style="text-align: center;"><span class="badge ${cls_courant}">${sign_courant}${fmt(gap_courant)}</span></td>
             <td style="text-align: right;">${fmt(g.p_real)}</td>
             <td style="text-align: right;">${fmt(g.p_est)}</td>
           </tr>
@@ -316,14 +326,22 @@
           const aGap = (a.real || 0) - (a.estimated || 0);
           const aSign = aGap > 0 ? '+' : '';
           const aCls = aGap >= 0 ? 'gap-pos' : 'gap-neg';
+          const aGap_courant = (a.period_real || 0) - (a.period_est || 0);
+          const aSign_courant = aGap_courant > 0 ? '+' : '';
+          const aCls_courant = aGap_courant >= 0 ? 'gap-pos' : 'gap-neg';
+
           html += `
             <tr class="asset-row group-child-${groupIdx}">
-              <td style="font-weight: 600; color: var(--accent);">${a.id_immo}<br><span style="font-size: 10px; color: var(--text-muted);">${a.code || ''}</span></td>
+              <td style="font-weight: 600; color: var(--accent);">${a.id_immo}<br>
+                  <span style="font-size: 10px; color: var(--text-muted);">${a.code || ''}</span>
+                  <span style="font-size: 10px; color: var(--text-muted); margin-left: 4px; font-weight: 600;">(Cat: #${a.cat_id})</span>
+              </td>
               <td style="font-size: 12px; line-height: 1.4;">${a.asset_name || '—'}</td>
               <td style="text-align: right; color: var(--text-muted);">${fmt(a.purchase_value)}</td>
               <td style="text-align: right;">${fmt(a.real)}</td>
               <td style="text-align: right;">${fmt(a.estimated)}</td>
               <td style="text-align: center;"><span class="badge ${aCls}">${aSign}${fmt(aGap)}</span></td>
+              <td style="text-align: center;"><span class="badge ${aCls_courant}">${aSign_courant}${fmt(aGap_courant)}</span></td>
               <td style="text-align: right;">${fmt(a.period_real)}</td>
               <td style="text-align: right;">${fmt(a.period_est)}</td>
             </tr>

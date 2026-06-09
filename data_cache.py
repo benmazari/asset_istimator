@@ -48,7 +48,7 @@ class DataCache:
                            aaat.name,
                            aaat.purchase_date, 
                            aaat.date_comptabilisation,
-                           aaat.purchase_value, 
+                           aaat.unit_price, 
                            aaat.method_number,
                            aaat.method_period,
                            aac.id AS cat_id,

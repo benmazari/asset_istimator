@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="fr" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Connexion — Asset Estimator</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <script src="https://unpkg.com/feather-icons"></script>
+  <style>
+    :root {
+      --bg: #f5f6fa;
+      --surface: #ffffff;
+      --border: #e2e8f0;
+      --accent: #4f46e5;
+      --accent-hover: #4338ca;
+      --accent-light: #e0e7ff;
+      --text: #1e293b;
+      --text-muted: #64748b;
+      --err: #ef4444;
+      --radius: 16px;
+      --shadow: 0 10px 30px rgba(0, 0, 0, 0.05);
+    }
+
+    [data-theme="dark"] {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --border: #2e3350;
+      --accent: #4f7df3;
+      --accent-hover: #3b66d5;
+      --accent-light: rgba(79,125,243,0.15);
+      --text: #e2e8f0;
+      --text-muted: #8892aa;
+      --shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.3s ease, color 0.3s ease;
+    }
+
+    .login-container {
+      width: 100%;
+      max-width: 420px;
+      padding: 20px;
+    }
+
+    .card {
+      background: var(--surface);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      border: 1px solid var(--border);
+      padding: 40px 32px;
+      transition: all 0.3s ease;
+    }
+
+    .logo-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin-bottom: 32px;
+      text-align: center;
+    }
+
+    .logo-icon {
+      width: 54px;
+      height: 54px;
+      background: var(--accent);
+      color: white;
+      border-radius: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 26px;
+      font-weight: bold;
+      margin-bottom: 16px;
+      box-shadow: 0 4px 14px var(--accent-light);
+    }
+
+    .logo-title {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1.2;
+    }
+
+    .logo-subtitle {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-top: 4px;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 20px;
+    }
+
+    label {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .input-wrapper {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+
+    .input-wrapper i {
+      position: absolute;
+      left: 16px;
+      color: var(--text-muted);
+      width: 18px;
+      height: 18px;
+      pointer-events: none;
+    }
+
+    input[type=text], input[type=password] {
+      width: 100%;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      color: var(--text);
+      font-family: 'Inter', sans-serif;
+      font-size: 14px;
+      padding: 12px 16px 12px 48px;
+      outline: none;
+      transition: all .2s;
+    }
+
+    input[type=text]:focus, input[type=password]:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-light);
+    }
+
+    .btn {
+      width: 100%;
+      height: 48px;
+      border-radius: 12px;
+      font-family: 'Inter', sans-serif;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: all .2s;
+      background: var(--accent);
+      color: #fff;
+      box-shadow: 0 4px 16px var(--accent-light);
+      margin-top: 8px;
+    }
+
+    .btn:hover {
+      background: var(--accent-hover);
+      transform: translateY(-2px);
+    }
+
+    .error-box {
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.2);
+      color: var(--err);
+      padding: 12px 16px;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 500;
+      margin-bottom: 24px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .theme-toggle-btn {
+      position: absolute;
+      top: 24px;
+      right: 24px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      padding: 8px 12px;
+      border-radius: 10px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      box-shadow: var(--shadow);
+      transition: all 0.2s;
+    }
+
+    .theme-toggle-btn:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+  </style>
+</head>
+<body>
+
+  <button class="theme-toggle-btn" onclick="toggleTheme()">
+    <i data-feather="sun" id="theme-icon" style="width:16px; height:16px;"></i>
+    <span>Thème</span>
+  </button>
+
+  <div class="login-container">
+    <div class="card">
+      <div class="logo-container">
+        <div class="logo-icon">⚙</div>
+        <div class="logo-title">Asset Estimator</div>
+        <div class="logo-subtitle">Hasnaoui Groupe</div>
+      </div>
+
+      {% if error %}
+      <div class="error-box">
+        <i data-feather="alert-circle" style="width:18px; height:18px;"></i>
+        <span>{{ error }}</span>
+      </div>
+      {% endif %}
+
+      <form method="POST" action="/login">
+        <div class="field">
+          <label for="username">Identifiant</label>
+          <div class="input-wrapper">
+            <i data-feather="user"></i>
+            <input type="text" id="username" name="username" placeholder="Entrez votre identifiant" required autofocus />
+          </div>
+        </div>
+
+        <div class="field" style="margin-bottom: 28px;">
+          <label for="password">Mot de passe</label>
+          <div class="input-wrapper">
+            <i data-feather="lock"></i>
+            <input type="password" id="password" name="password" placeholder="Entrez votre mot de passe" required />
+          </div>
+        </div>
+
+        <button type="submit" class="btn">
+          Se connecter
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    feather.replace();
+
+    function toggleTheme() {
+      const current = document.documentElement.getAttribute('data-theme');
+      const next = current === 'dark' ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', next);
+      localStorage.setItem('theme', next);
+      updateThemeIcon(next);
+    }
+
+    function updateThemeIcon(theme) {
+      const icon = document.getElementById('theme-icon');
+      if (theme === 'dark') {
+        icon.setAttribute('data-feather', 'sun');
+      } else {
+        icon.setAttribute('data-feather', 'moon');
+      }
+      feather.replace();
+    }
+
+    const savedTheme = localStorage.getItem('theme') || 'dark';
+    document.documentElement.setAttribute('data-theme', savedTheme);
+    updateThemeIcon(savedTheme);
+  </script>
+</body>
+</html>

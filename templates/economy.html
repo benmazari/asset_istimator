@@ -295,9 +295,13 @@
     </div>
     <nav class="sidebar-nav">
       <a href="/"><i data-feather="settings"></i> Générateur</a>
+      <a href="/medina_analyse"><i data-feather="calendar"></i> Medina Analyse</a>
       <a href="/dashboard"><i data-feather="pie-chart"></i> Tableau de bord</a>
+      {% if session.get('role') == 'admin' %}
       <a href="/economy" class="active"><i data-feather="trending-up"></i> Analyse d'Économie</a>
       <a href="/config"><i data-feather="sliders"></i> Configuration</a>
+      {% endif %}
+      <a href="/logout" style="margin-top: auto; color: #ef4444;"><i data-feather="log-out"></i> Déconnexion</a>
     </nav>
     <div style="flex:1;"></div>
     <div class="sidebar-cta">
@@ -330,7 +334,7 @@
         <div class="profile">
           <div class="profile-img"><i data-feather="user" style="width:20px; height:20px;"></i></div>
           <div class="profile-info">
-            <span class="profile-name">Admin</span>
+            <span class="profile-name">{{ session.get('username')|capitalize }}</span>
             <span class="profile-role" id="db-badge">Base de données</span>
           </div>
         </div>
@@ -384,15 +388,15 @@
           <!-- Row 2: Precision -->
           <div class="filters-row">
             <div class="field">
-              <label>Référence Année</label>
+              <label>Référence Année / Date</label>
               <select id="f-year-debut-type">
                 <option value="start_date">Début d'amortissement</option>
                 <option value="purchase_date">Date d'acquisition</option>
               </select>
             </div>
             <div class="field">
-              <label>Année spécifique</label>
-              <input type="text" id="f-year-debut" placeholder="ex: 2025" />
+              <label>Année (AAAA) ou Date (JJ/MM/AAAA)</label>
+              <input type="text" id="f-year-debut" placeholder="ex: 2025 ou 31/12/2025" />
             </div>
             <div class="field">
               <label>ID Immobilisation</label>
@@ -445,12 +449,13 @@
           <table id="economy-table">
             <thead><tr>
               <th>Société</th>
-              <th>Catégorie</th>
+              <th>ID / Catégorie</th>
               <th>Nb Immo</th>
               <th>Valeur Brute</th>
               <th>Montant déjà amorti réel</th>
               <th>Montant déjà amorti estimé</th>
               <th>Écart Global</th>
+              <th>Écart Courant</th>
               <th>Amortissement courant réel</th>
               <th>Amortissement courant estimé</th>
             </tr></thead>
@@ -750,6 +755,10 @@ function renderTable(rows, assetDetails) {
     const cls = c.gap > 0 ? 'tag-pos' : c.gap < 0 ? 'tag-neg' : 'tag-zero';
     const sign = c.gap > 0 ? '+' : '';
 
+    const g_courant = c.p_old - c.p_new;
+    const cls_courant = g_courant > 0 ? 'tag-pos' : g_courant < 0 ? 'tag-neg' : 'tag-zero';
+    const sign_courant = g_courant > 0 ? '+' : '';
+
     html += `<tr onclick="toggleComp(${compIdx})" style="cursor:pointer;background:var(--surface2);border-bottom:2px solid var(--border);">
       <td style="font-weight:700;color:var(--text);"><span id="icon-${compIdx}" style="display:inline-block;width:16px;color:var(--muted);">▶</span> ${c.name}</td>
       <td style="color:var(--muted);font-size:11px;">${c.cats.length} catégorie(s)</td>
@@ -758,6 +767,7 @@ function renderTable(rows, assetDetails) {
       <td class="yr-old" style="font-weight:700;">${fmt(c.real)}</td>
       <td class="yr-new" style="font-weight:700;">${c.estimated > 0 ? fmt(c.estimated) : '—'}</td>
       <td class="${cls}" style="font-weight:700;">${sign}${fmt(c.gap)}</td>
+      <td class="${cls_courant}" style="font-weight:700;">${sign_courant}${fmt(g_courant)}</td>
       <td style="font-weight:700;">${c.p_old > 0 ? fmt(c.p_old) : '—'}</td>
       <td style="font-weight:700;">${c.p_new > 0 ? fmt(c.p_new) : '—'}</td>
     </tr>`;
@@ -773,14 +783,19 @@ function renderTable(rows, assetDetails) {
       const toggleIcon = hasAssets ? `<span id="cat-icon-${catId}" style="display:inline-block;width:14px;color:var(--muted);font-size:10px;">▶</span>` : `<span style="display:inline-block;width:14px;"></span>`;
       const clickAttr = hasAssets ? `onclick="toggleCat(${catId})" style="cursor:pointer;background:transparent;"` : `style="background:transparent;"`;
 
+      const cat_g_courant = (cat.period_old || 0) - (cat.period_new || 0);
+      const cat_cls_courant = cat_g_courant > 0 ? 'tag-pos' : cat_g_courant < 0 ? 'tag-neg' : 'tag-zero';
+      const cat_sign_courant = cat_g_courant > 0 ? '+' : '';
+
       html += `<tr class="child-row comp-${compIdx}" ${clickAttr} style="display:none;">
         <td></td>
-        <td style="color:var(--text);padding-left:18px;">${toggleIcon} └ ${cat.category}</td>
+        <td style="color:var(--text);padding-left:18px;">${toggleIcon} └ <span style="font-size:11px;color:var(--text-muted);font-weight:600;">#${cat.cat_id || ''}</span> ${cat.category}</td>
         <td>${fmtInt(cat.count)}</td>
         <td>${fmt(cat.total_pv)}</td>
         <td class="yr-old">${fmt(cat.real)}</td>
         <td class="yr-new">${cat.estimated > 0 ? fmt(cat.estimated) : '—'}</td>
         <td class="${cCls}">${cSign}${fmt(cat.gap)}</td>
+        <td class="${cat_cls_courant}">${cat_sign_courant}${fmt(cat_g_courant)}</td>
         <td>${cat.period_old != null ? fmt(cat.period_old) : '—'}</td>
         <td>${cat.period_new != null ? fmt(cat.period_new) : '—'}</td>
       </tr>`;
@@ -790,6 +805,10 @@ function renderTable(rows, assetDetails) {
         const gapVal = a.gap != null ? a.gap : null;
         const gCls = gapVal == null ? 'tag-zero' : gapVal > 0 ? 'tag-pos' : gapVal < 0 ? 'tag-neg' : 'tag-zero';
         const gSign = gapVal != null && gapVal > 0 ? '+' : '';
+        const a_g_courant = (a.period_real || 0) - (a.period_est || 0);
+        const a_cls_courant = a_g_courant > 0 ? 'tag-pos' : a_g_courant < 0 ? 'tag-neg' : 'tag-zero';
+        const a_sign_courant = a_g_courant > 0 ? '+' : '';
+
         html += `<tr class="asset-row comp-${compIdx} cat-assets-${catId}" style="display:none;">
           <td></td>
           <td style="padding-left:42px;color:var(--text);font-size:12px;">└─ ${label}</td>
@@ -798,8 +817,9 @@ function renderTable(rows, assetDetails) {
           <td class="yr-old">${a.real != null ? fmt(a.real) : '—'}</td>
           <td class="yr-new">${a.estimated != null && a.estimated > 0 ? fmt(a.estimated) : '—'}</td>
           <td class="${gCls}">${gapVal != null ? gSign + fmt(gapVal) : '—'}</td>
-          <td>—</td>
-          <td>—</td>
+          <td class="${a_cls_courant}">${a_g_courant != null ? a_sign_courant + fmt(a_g_courant) : '—'}</td>
+          <td>${a.period_real != null ? fmt(a.period_real) : '—'}</td>
+          <td>${a.period_est != null ? fmt(a.period_est) : '—'}</td>
         </tr>`;
       });
     });

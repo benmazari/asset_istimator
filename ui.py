@@ -15,7 +15,7 @@ import uuid
 import queue
 import threading
 from datetime import datetime
-from flask import Flask, render_template, jsonify, request, send_file, Response, stream_with_context
+from flask import Flask, render_template, jsonify, request, send_file, Response, stream_with_context, session, redirect, url_for
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIR)
@@ -25,6 +25,7 @@ from generator import generate
 from db import get_connection
 
 app = Flask(__name__, template_folder=os.path.join(SCRIPT_DIR, "templates"))
+app.secret_key = "hasnaoui-amortissement-secret-key-123456"
 
 # ── Legacy global job state (used by dashboard / /api/status polling) ────────
 _lock = threading.Lock()
@@ -69,6 +70,44 @@ def _load_config():
         cfg["categories"] = cats
         
     return cfg
+
+
+
+def _parse_year_debut(val_s):
+    """Parse year_debut which can be a 4-digit year or a date (DD/MM/YYYY or YYYY-MM-DD)."""
+    if not val_s:
+        return None, None
+    val_s = str(val_s).strip()
+    if not val_s:
+        return None, None
+
+    from datetime import datetime as _dt
+    # Check DD/MM/YYYY
+    if "/" in val_s:
+        parts = val_s.split("/")
+        if len(parts) == 3:
+            try:
+                dt = _dt.strptime(val_s, "%d/%m/%Y").date()
+                return dt, "date"
+            except ValueError:
+                pass
+
+    # Check YYYY-MM-DD
+    if "-" in val_s and len(val_s) == 10:
+        try:
+            dt = _dt.strptime(val_s, "%Y-%m-%d").date()
+            return dt, "date"
+        except ValueError:
+            pass
+
+    # Check YYYY (4 digits)
+    if val_s.isdigit() and len(val_s) == 4:
+        try:
+            return int(val_s), "year"
+        except ValueError:
+            pass
+
+    return None, None
 
 
 def _parse_flexible_date(d_str: str):
@@ -124,7 +163,7 @@ from data_cache import global_cache
 
 def _run_generation(categories, output_format, asset_id=None, societe=None, dep_date=None,
                     granularity="monthly", from_date=None, as_of_date=None, sse_job_id=None, year_debut=None,
-                    asset_search=None, non_amortie=False, year_debut_type="start_date"):
+                    asset_search=None, non_amortie=False, year_debut_type="start_date", is_medina=False):
     """
     Background thread: uses generator.py for batched processing.
     If sse_job_id is given, logs are also pushed to the SSE queue for that job.
@@ -167,6 +206,7 @@ def _run_generation(categories, output_format, asset_id=None, societe=None, dep_
             year_debut_type=year_debut_type,
             asset_search=asset_search,
             non_amortie=non_amortie,
+            is_medina=is_medina,
         )
     except Exception as e:
         combined_log(f"[ERREUR FATALE] {e}")
@@ -214,6 +254,78 @@ def _get_virtual_category_mapping(all_cats):
             for aid in aids:
                 v_map[aid] = v_id
     return v_map, v_aids_map
+
+
+_excel_override_cache = None
+
+def _get_excel_category_overrides():
+    """
+    Load Classeur1.xlsx and return a dict {id_immo (int) -> new_cat_id (int)}.
+    Results are cached in-process.
+    """
+    global _excel_override_cache
+    if _excel_override_cache is not None:
+        return _excel_override_cache
+    try:
+        import pandas as pd
+        xl_path = os.path.join(os.path.dirname(__file__), "Classeur1.xlsx")
+        df = pd.read_excel(xl_path)
+        # Normalise column names: tolower + strip
+        df.columns = [c.lower().strip() for c in df.columns]
+        id_col  = next((c for c in df.columns if "immo" in c), None)
+        cat_col = next((c for c in df.columns if "cat" in c), None)
+        if id_col and cat_col:
+            mapping = {
+                int(row[id_col]): int(row[cat_col])
+                for _, row in df.iterrows()
+                if pd.notna(row[id_col]) and pd.notna(row[cat_col])
+            }
+            _excel_override_cache = mapping
+            return mapping
+    except Exception as e:
+        print(f"[WARN] Could not load Classeur1.xlsx: {e}")
+    _excel_override_cache = {}
+    return {}
+
+
+# ── Authentication Middleware & Routes ────────────────────────────────────────
+
+# ── Authentication Middleware & Routes ────────────────────────────────────────
+
+@app.before_request
+def check_auth():
+    if request.endpoint in ('login', 'static'):
+        return
+    if 'username' not in session:
+        return redirect(url_for('login'))
+    if session.get('role') == 'user':
+        if request.endpoint in ('config_page', 'api_update_config', 'economy_page'):
+            return redirect(url_for('index'))
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    error = None
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "").strip()
+        if username == "admin" and password == "admin":
+            session["username"] = "admin"
+            session["role"] = "admin"
+            return redirect(url_for("index"))
+        elif username == "user" and password == "user":
+            session["username"] = "user"
+            session["role"] = "user"
+            return redirect(url_for("index"))
+        else:
+            error = "Identifiants incorrects (admin/admin ou user/user)"
+    return render_template("login.html", error=error)
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -417,7 +529,7 @@ def api_dashboard():
         asset_id_f   = request.args.get("asset_id") or None   # filter by ID
         asset_search = (request.args.get("asset_search") or "").strip()  # name/code
         year_debut_s = request.args.get("year_debut") or None
-        year_debut   = int(year_debut_s) if year_debut_s and str(year_debut_s).isdigit() else None
+        yd_val, yd_type = _parse_year_debut(year_debut_s)
         year_debut_type = request.args.get("year_debut_type") or "start_date"
         non_amortie = request.args.get("non_amortie") == "true"
 
@@ -476,7 +588,12 @@ def api_dashboard():
         af = "AND aaat.id = %s" if asset_id_f else ""
         sf = "AND (aaat.name ILIKE %s OR aaat.code ILIKE %s)" if asset_search else ""
         date_col = "aaat.purchase_date" if year_debut_type == "purchase_date" else "aaat.date_comptabilisation"
-        yf = f"AND EXTRACT(YEAR FROM {date_col}) = %s" if year_debut else ""
+        if yd_type == "date":
+            yf = f"AND {date_col} = %s"
+        elif yd_type == "year":
+            yf = f"AND EXTRACT(YEAR FROM {date_col}) = %s"
+        else:
+            yf = ""
         conn = get_connection(cfg["database"])
 
         # ── 0. Fetch old years (method_number) per category from DB ───────────
@@ -503,12 +620,20 @@ def api_dashboard():
                 if a["cat_id"] not in sel_cat_set: continue
                 if societe and a["company_name"] != societe: continue
                 if asset_id_f and str(a["id_immo"]) != str(asset_id_f): continue
-                if year_debut:
+                if yd_val is not None:
                     try:
                         sd = a.get(year_debut_type)
                         if isinstance(sd, str):
-                            if int(sd[:4]) != year_debut: continue
-                        elif sd and sd.year != year_debut: continue
+                            sd_parsed = dt_cls.strptime(sd[:10], "%Y-%m-%d").date()
+                        elif isinstance(sd, (date_cls, dt_cls)):
+                            sd_parsed = sd if isinstance(sd, date_cls) else sd.date()
+                        else:
+                            sd_parsed = None
+                        
+                        if yd_type == "date":
+                            if sd_parsed != yd_val: continue
+                        elif yd_type == "year":
+                            if sd_parsed.year != yd_val: continue
                     except: continue
                 if asset_search:
                     s = asset_search.lower()
@@ -559,17 +684,21 @@ def api_dashboard():
         else:
             # ── 1. Assets (minimal) ───────────────────────────────────────────────
             v_map, v_aids_map = _get_virtual_category_mapping(all_cats)
+            excel_map = _get_excel_category_overrides()  # id_immo -> new real cat_id
             v_aids = []
             for cid in all_cat_ids:
                 if cid in v_aids_map:
                     v_aids.extend(v_aids_map[cid])
-            v_clause = f"OR aaat.id = ANY(ARRAY{v_aids})" if v_aids else ""
+            # Also include assets whose Excel override points to one of the selected categories
+            excel_aids = [aid for aid, cid in excel_map.items() if cid in all_cat_ids]
+            all_extra_aids = list(set(v_aids + excel_aids))
+            v_clause = f"OR aaat.id = ANY(ARRAY{all_extra_aids})" if all_extra_aids else ""
 
             extra_params = [all_cat_ids]
             if societe:      extra_params.append(societe)
             if asset_id_f:   extra_params.append(int(asset_id_f))
             if asset_search: extra_params += [f"%{asset_search}%", f"%{asset_search}%"]
-            if year_debut:   extra_params.append(year_debut)
+            if yd_val is not None: extra_params.append(yd_val)
 
             with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
                 cur.execute(f"""
@@ -578,7 +707,7 @@ def api_dashboard():
                            aaat.name AS asset_name,
                            aaat.purchase_date,
                            aaat.date_comptabilisation AS start_date,
-                           aaat.purchase_value,
+                           aaat.unit_price AS purchase_value,
                            aaat.method_number,
                            aac.id AS cat_id,
                            COALESCE(societe_comptable.name, 'Non défini') AS company_name,
@@ -592,8 +721,12 @@ def api_dashboard():
                 asset_rows = []
                 for r in cur.fetchall():
                     d = dict(r)
-                    if d["id_immo"] in v_map:
-                        d["cat_id"] = v_map[d["id_immo"]]
+                    aid = d["id_immo"]
+                    # Excel override takes priority over virtual map
+                    if aid in excel_map:
+                        d["cat_id"] = excel_map[aid]
+                    elif aid in v_map:
+                        d["cat_id"] = v_map[aid]
                     
                     # Apply non-amortie filter for non-cached path too
                     # We'll need real lines to be sure, which are fetched later if date_str is present
@@ -645,7 +778,12 @@ def api_dashboard():
             else:
                 # Aggregate real amount per category directly in SQL (fast, no Python loop)
                 sc2 = "AND societe_comptable.name = %s" if societe else ""
-                yf2 = f"AND EXTRACT(YEAR FROM {date_col}) = %s" if year_debut else ""
+                if yd_type == "date":
+                    yf2 = f"AND {date_col} = %s"
+                elif yd_type == "year":
+                    yf2 = f"AND EXTRACT(YEAR FROM {date_col}) = %s"
+                else:
+                    yf2 = ""
                 with conn.cursor() as cur:
                     cur.execute(f"""
                         SELECT aaat.id AS id_immo,
@@ -658,15 +796,19 @@ def api_dashboard():
                         LEFT JOIN res_company societe_comptable ON societe_comptable.id = aaat.company_id
                         WHERE (aac.id = ANY(%s) {v_clause}) {sc2} {yf2}
                         GROUP BY aaat.id, aac.id, societe_comptable.name
-                    """, [all_cat_ids] + ([societe] if societe else []) + ([year_debut] if year_debut else []))
+                    """, [all_cat_ids] + ([societe] if societe else []) + ([yd_val] if yd_val is not None else []))
                     
                     real_by_cat_id = {}
                     real_by_company = {}
                     real_by_comp_cat_id = {}
                     v_map, _ = _get_virtual_category_mapping(all_cats)
+                    excel_map = _get_excel_category_overrides()
                     for r in cur.fetchall():
                         aid, cid, comp, amt = r[0], r[1], r[2], float(r[3] or 0)
-                        if aid in v_map:
+                        # Apply overrides: Excel first, then virtual
+                        if aid in excel_map:
+                            cid = excel_map[aid]
+                        elif aid in v_map:
                             cid = v_map[aid]
                         real_by_cat_id[cid] = real_by_cat_id.get(cid, 0.0) + amt
                         real_by_company[comp] = real_by_company.get(comp, 0.0) + amt
@@ -757,6 +899,7 @@ def api_dashboard():
 
                 asset_details_list.append({
                     "company":   comp,
+                    "cat_id":    cid,
                     "category_label":  label,
                     "id_immo":   asset["id_immo"],
                     "code":      asset.get("code") or "",
@@ -813,6 +956,7 @@ def api_dashboard():
 
                 asset_details_list.append({
                     "company":   comp,
+                    "cat_id":    cid,
                     "category_label":  label,
                     "id_immo":   asset["id_immo"],
                     "code":      asset.get("code") or "",
@@ -872,6 +1016,7 @@ def api_dashboard():
             saving_per_period = round(period_old - period_new, 2) if period_old is not None and period_new is not None else None
 
             gap_list.append({
+                "cat_id":            cid,
                 "category":          lbl,
                 "real":              round(d["real"], 2),
                 "estimated":         round(d["estimated"], 2),
@@ -914,6 +1059,7 @@ def api_dashboard():
             
             economy_list.append({
                 "company": comp,
+                "cat_id": cid,
                 "category": lbl,
                 "count": d["count"],
                 "total_pv": round(total_pv, 2),
@@ -1006,7 +1152,7 @@ def api_dashboard():
                 title_text = f"Analyse Détaillée des Écarts d'Amortissement — {societe_val}"
                 
                 # Title Block
-                ws.merge_cells("A1:J2")
+                ws.merge_cells("A1:L2")
                 title_cell = ws["A1"]
                 title_cell.value = title_text
                 title_cell.font = font_title
@@ -1014,7 +1160,7 @@ def api_dashboard():
                 title_cell.alignment = align_center
 
                 # Subtitle Block (parameters)
-                ws.merge_cells("A3:J3")
+                ws.merge_cells("A3:L3")
                 sub_cell = ws["A3"]
                 date_param = request.args.get("date") or "Toutes dates"
                 gran_param = request.args.get("gran") or "mensuelle"
@@ -1024,9 +1170,10 @@ def api_dashboard():
                 sub_cell.alignment = align_center
 
                 headers = [
-                    "Catégorie", "ID Immo", "Code", "Désignation", 
+                    "Catégorie", "ID Catégorie", "ID Immo", "Code", "Désignation", 
                     "Valeur Brute", "Amorti Réel", "Amorti Estimé", 
-                    "Écart (Réel - Estimé)", "Dotation Période Réelle", "Dotation Période Estimée"
+                    "Écart (Réel - Estimé)", "Écart Période (Réel - Estimé)",
+                    "Dotation Période Réelle", "Dotation Période Estimée"
                 ]
                 
                 # Set row heights
@@ -1073,6 +1220,7 @@ def api_dashboard():
 
                     row_vals = [
                         asset.get("category_label") or "Sans catégorie",
+                        asset.get("cat_id"),
                         asset.get("id_immo"),
                         asset.get("code") or "",
                         asset.get("asset_name") or "",
@@ -1080,6 +1228,7 @@ def api_dashboard():
                         real,
                         est,
                         gap,
+                        p_real - p_est,
                         p_real,
                         p_est
                     ]
@@ -1090,9 +1239,9 @@ def api_dashboard():
                         cell.border = thin_border
                         
                         # Formatting and alignment
-                        if col_idx in [1, 3, 4]:
+                        if col_idx in [1, 4, 5]:
                             cell.alignment = align_left
-                        elif col_idx in [2]:
+                        elif col_idx in [2, 3]:
                             cell.alignment = align_center
                         else:
                             cell.alignment = align_right
@@ -1101,24 +1250,25 @@ def api_dashboard():
                     current_row += 1
 
                 # Write Total Row
-                ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=4)
+                ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=5)
                 total_label = ws.cell(row=current_row, column=1, value="TOTAL SÉLECTION")
                 total_label.font = font_total
                 total_label.alignment = align_left
                 total_label.fill = fill_total
 
                 # Fill standard cell styles for merged region borders
-                for c in range(1, 5):
+                for c in range(1, 6):
                     ws.cell(row=current_row, column=c).border = total_border
                     ws.cell(row=current_row, column=c).fill = fill_total
 
                 totals = {
-                    5: total_pv,
-                    6: total_real,
-                    7: total_est,
-                    8: total_gap,
-                    9: total_p_real,
-                    10: total_p_est
+                    6: total_pv,
+                    7: total_real,
+                    8: total_est,
+                    9: total_gap,
+                    10: total_p_real - total_p_est,
+                    11: total_p_real,
+                    12: total_p_est
                 }
 
                 for col_idx, val in totals.items():
@@ -1135,7 +1285,7 @@ def api_dashboard():
                 title_text = "Synthèse Globale des Écarts d'Amortissement"
 
                 # Title Block
-                ws.merge_cells("A1:I2")
+                ws.merge_cells("A1:K2")
                 title_cell = ws["A1"]
                 title_cell.value = title_text
                 title_cell.font = font_title
@@ -1143,7 +1293,7 @@ def api_dashboard():
                 title_cell.alignment = align_center
 
                 # Subtitle Block (parameters)
-                ws.merge_cells("A3:I3")
+                ws.merge_cells("A3:K3")
                 sub_cell = ws["A3"]
                 date_param = request.args.get("date") or "Toutes dates"
                 gran_param = request.args.get("gran") or "mensuelle"
@@ -1153,8 +1303,9 @@ def api_dashboard():
                 sub_cell.alignment = align_center
 
                 headers = [
-                    "Société", "Catégorie", "Nombre d'Immo", "Valeur Brute", 
+                    "Société", "Catégorie", "ID Catégorie", "Nombre d'Immo", "Valeur Brute", 
                     "Amorti Réel", "Amorti Estimé", "Écart (Charge/Produit)", 
+                    "Écart Période (Charge/Produit)",
                     "Dotation Période Réelle", "Dotation Période Estimée"
                 ]
 
@@ -1202,11 +1353,13 @@ def api_dashboard():
                     row_vals = [
                         row.get('company') or "",
                         row.get('category') or "",
+                        row.get('cat_id'),
                         count,
                         pv,
                         real,
                         est,
                         gap,
+                        p_real - p_est,
                         p_real,
                         p_est
                     ]
@@ -1219,9 +1372,9 @@ def api_dashboard():
                         # Formatting and alignment
                         if col_idx in [1, 2]:
                             cell.alignment = align_left
-                        elif col_idx in [3]:
+                        elif col_idx in [3, 4]:
                             cell.alignment = align_center
-                            cell.number_format = '#,##0'
+                            if col_idx == 4: cell.number_format = '#,##0'
                         else:
                             cell.alignment = align_right
                             cell.number_format = '#,##0.00'
@@ -1229,33 +1382,34 @@ def api_dashboard():
                     current_row += 1
 
                 # Write Total Row
-                ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=2)
+                ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=3)
                 total_label = ws.cell(row=current_row, column=1, value="TOTAL SYNTHÈSE")
                 total_label.font = font_total
                 total_label.alignment = align_left
                 total_label.fill = fill_total
 
                 # Fill standard cell styles for merged region borders
-                for c in range(1, 3):
+                for c in range(1, 4):
                     ws.cell(row=current_row, column=c).border = total_border
                     ws.cell(row=current_row, column=c).fill = fill_total
 
                 totals = {
-                    3: total_count,
-                    4: total_pv,
-                    5: total_real,
-                    6: total_est,
-                    7: total_gap,
-                    8: total_p_real,
-                    9: total_p_est
+                    4: total_count,
+                    5: total_pv,
+                    6: total_real,
+                    7: total_est,
+                    8: total_gap,
+                    9: total_p_real - total_p_est,
+                    10: total_p_real,
+                    11: total_p_est
                 }
 
                 for col_idx, val in totals.items():
                     cell = ws.cell(row=current_row, column=col_idx, value=val)
                     cell.font = font_total
                     cell.fill = fill_total
-                    cell.alignment = align_right if col_idx != 3 else align_center
-                    cell.number_format = '#,##0.00' if col_idx != 3 else '#,##0'
+                    cell.alignment = align_right if col_idx != 4 else align_center
+                    cell.number_format = '#,##0.00' if col_idx != 4 else '#,##0'
                     cell.border = total_border
 
             # Auto-adjust column widths dynamically
@@ -1335,8 +1489,7 @@ def api_generate():
     asset_id_raw = body.get("asset_id") or None
     asset_id     = int(asset_id_raw) if asset_id_raw and str(asset_id_raw).isdigit() else None
     asset_search = (body.get("asset_search") or "").strip() or None
-    year_debut_raw = body.get("year_debut") or None
-    year_debut   = int(year_debut_raw) if year_debut_raw and str(year_debut_raw).isdigit() else None
+    year_debut = body.get("year_debut") or None
     year_debut_type = body.get("year_debut_type") or "start_date"
     societe      = body.get("societe") or None
 
@@ -1513,6 +1666,96 @@ def api_cache_status():
             "assets_count": len(global_cache.assets),
             "error": global_cache.error
         })
+
+
+
+@app.route("/medina_analyse")
+def medina_analyse():
+    return render_template("medina_analyse.html")
+
+
+@app.route("/api/medina_upload", methods=["POST"])
+def api_medina_upload():
+    if "file" not in request.files:
+        return jsonify({"error": "Aucun fichier fourni."}), 400
+    file = request.files["file"]
+    if file.filename == "":
+        return jsonify({"error": "Nom de fichier vide."}), 400
+    
+    save_path = os.path.join(SCRIPT_DIR, "medina_analyse.xlsx")
+    try:
+        file.save(save_path)
+        # Clear the generator date override cache
+        import generator
+        generator._excel_date_override_cache = None
+        return jsonify({"ok": True, "message": "Fichier medina_analyse.xlsx téléversé avec succès."})
+    except Exception as e:
+        return jsonify({"error": f"Erreur lors de la sauvegarde : {str(e)}"}), 500
+
+
+@app.route("/api/medina_generate", methods=["POST"])
+def api_medina_generate():
+    """Start Medina generation in background thread."""
+    with _lock:
+        if _job["status"] == "running":
+            return jsonify({"error": "Une generation est deja en cours."}), 409
+
+    body = request.get_json(force=True) or {}
+    categories = body.get("categories", [])
+    output_format = body.get("format", "excel")
+    granularity = body.get("granularity", "monthly")
+    
+    asset_id_raw = body.get("asset_id") or None
+    asset_id = int(asset_id_raw) if asset_id_raw and str(asset_id_raw).isdigit() else None
+    asset_search = (body.get("asset_search") or "").strip() or None
+    
+    from_date_raw = (body.get("from_date") or "").strip()
+    as_of_raw = (body.get("as_of_date") or "").strip()
+
+    _, from_date = _parse_flexible_date(from_date_raw)
+    if from_date_raw and not from_date:
+        return jsonify({"error": f"Date invalide '{from_date_raw}' — format AAAA, MM/AAAA ou JJ/MM/AAAA requis."}), 400
+
+    dep_date_str, as_of_date = _parse_flexible_date(as_of_raw)
+    if as_of_raw and not as_of_date:
+        return jsonify({"error": f"Date invalide '{as_of_raw}' — format AAAA, MM/AAAA ou JJ/MM/AAAA requis."}), 400
+
+    if not categories:
+        return jsonify({"error": "Aucune categorie selectionnee."}), 400
+
+    # Resolve category labels → full dicts from config
+    cfg = _load_config()
+    all_cats = cfg.get("categories", [])
+    label_set = set(categories)
+    resolved = [c for c in all_cats if c.get("label") in label_set]
+    if not resolved:
+        return jsonify({"error": "Aucune categorie valide."}), 400
+
+    job_id = str(uuid.uuid4())
+    log_q: queue.Queue = queue.Queue()
+    with _sse_lock:
+        _sse_jobs[job_id] = {"status": "running", "log_q": log_q, "file": None}
+
+    thread = threading.Thread(
+        target=_run_generation,
+        kwargs=dict(
+            categories=resolved,
+            output_format=output_format,
+            granularity=granularity,
+            from_date=from_date,
+            as_of_date=as_of_date,
+            dep_date=dep_date_str,
+            asset_id=asset_id,
+            asset_search=asset_search,
+            sse_job_id=job_id,
+            societe=None,
+            non_amortie=body.get("non_amortie", False),
+            is_medina=True,
+        ),
+        daemon=True,
+    )
+    thread.start()
+    return jsonify({"job_id": job_id})
 
 
 if __name__ == "__main__":

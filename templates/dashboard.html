@@ -383,9 +383,13 @@
     </div>
     <nav class="sidebar-nav">
       <a href="/"><i data-feather="settings"></i> Générateur</a>
+      <a href="/medina_analyse"><i data-feather="calendar"></i> Medina Analyse</a>
       <a href="/dashboard" class="active"><i data-feather="pie-chart"></i> Tableau de bord</a>
+      {% if session.get('role') == 'admin' %}
       <a href="/economy"><i data-feather="trending-up"></i> Analyse d'Économie</a>
       <a href="/config"><i data-feather="sliders"></i> Configuration</a>
+      {% endif %}
+      <a href="/logout" style="margin-top: auto; color: #ef4444;"><i data-feather="log-out"></i> Déconnexion</a>
     </nav>
     <div style="flex:1;"></div>
     <div class="sidebar-cta">
@@ -418,7 +422,7 @@
         <div class="profile">
           <div class="profile-img"><i data-feather="user" style="width:20px; height:20px;"></i></div>
           <div class="profile-info">
-            <span class="profile-name">Admin</span>
+            <span class="profile-name">{{ session.get('username')|capitalize }}</span>
             <span class="profile-role" id="db-badge">Base de données</span>
           </div>
         </div>
@@ -542,15 +546,15 @@
           <!-- Row 2: Precision -->
           <div class="filters-row">
             <div class="field">
-              <label>Référence Année</label>
+              <label>Référence Année / Date</label>
               <select id="f-year-debut-type">
                 <option value="start_date">Début d'amortissement</option>
                 <option value="purchase_date">Date d'acquisition</option>
               </select>
             </div>
             <div class="field">
-              <label>Année spécifique</label>
-              <input type="text" id="f-year-debut" placeholder="ex: 2025" />
+              <label>Année (AAAA) ou Date (JJ/MM/AAAA)</label>
+              <input type="text" id="f-year-debut" placeholder="ex: 2025 ou 31/12/2025" />
             </div>
             <div class="field">
               <label>ID Immobilisation</label>
@@ -614,6 +618,7 @@
               <th>Réel amorti</th>
               <th>Estimé</th>
               <th>Écart (Réel - Estimé)</th>
+              <th>Écart Courant</th>
               <th>Courant Réel</th>
               <th>Courant Estimé</th>
             </tr></thead>
@@ -638,10 +643,11 @@
         <div class="table-wrap">
           <table id="gap-table">
             <thead><tr>
-              <th>Catégorie</th>
+              <th>ID / Catégorie</th>
               <th>Montant déjà amorti réel</th>
               <th>Montant déjà amorti estimé</th>
               <th>Écart</th>
+              <th>Écart Courant</th>
               <th>Nb immo</th>
               <th title="method_number/12 depuis la BD">Ancienne durée (ans)</th>
               <th title="Durée configurée">Nouvelle durée (ans)</th>
@@ -1005,7 +1011,7 @@ function buildGapHierarchy(data) {
       const item = document.createElement('div');
       item.className = 'category-item';
       item.innerHTML = `
-        <span class="category-label">${cat.category}</span>
+        <span class="category-label"><span style="font-size:11px;color:var(--text-muted);font-weight:600;">#${cat.cat_id || ''}</span> ${cat.category}</span>
         <span class="category-gap ${cat.gap >= 0 ? 'pos' : 'neg'}">${fmt(cat.gap)} DA</span>
       `;
       body.appendChild(item);
@@ -1106,6 +1112,9 @@ function renderDashboard(d, dateStr) {
       const g = row.gap;
       const cls = g > 0 ? 'tag-pos' : g < 0 ? 'tag-neg' : 'tag-zero';
       const sign = g > 0 ? '+' : '';
+      const g_courant = (row.period_old || 0) - (row.period_new || 0);
+      const cls_courant = g_courant > 0 ? 'tag-pos' : g_courant < 0 ? 'tag-neg' : 'tag-zero';
+      const sign_courant = g_courant > 0 ? '+' : '';
       compBody.innerHTML += `<tr>
         <td style="font-weight:600;color:var(--text);">${row.company}</td>
         <td>${fmtInt(row.count)}</td>
@@ -1113,6 +1122,7 @@ function renderDashboard(d, dateStr) {
         <td>${fmt(row.real)}</td>
         <td>${row.estimated > 0 ? fmt(row.estimated) : '—'}</td>
         <td class="${cls}">${sign}${fmt(g)}</td>
+        <td class="${cls_courant}">${sign_courant}${fmt(g_courant)}</td>
         <td>${row.period_old != null ? fmt(row.period_old) : '—'}</td>
         <td>${row.period_new != null ? fmt(row.period_new) : '—'}</td>
       </tr>`;
@@ -1130,10 +1140,11 @@ function renderDashboard(d, dateStr) {
     const svCls = sv > 0 ? 'tag-pos' : sv < 0 ? 'tag-neg' : 'tag-zero';
     const svSign = sv > 0 ? '+' : '';
     tbody.innerHTML += `<tr>
-      <td>${row.category}</td>
+      <td><span style="font-size:11px;color:var(--text-muted);font-weight:600;">#${row.cat_id || ''}</span> ${row.category}</td>
       <td>${fmt(row.real)}</td>
       <td>${row.estimated > 0 ? fmt(row.estimated) : '—'}</td>
       <td class="${cls}">${sign}${fmt(g)}</td>
+      <td class="${svCls}">${sv != null ? svSign+fmt(sv) : '—'}</td>
       <td>${fmtInt(row.count)}</td>
       <td class="yr-old">${row.old_years != null ? row.old_years : '—'}</td>
       <td class="yr-new">${row.new_years != null ? row.new_years : '—'}</td>
@@ -1159,7 +1170,9 @@ function renderScenario(rows) {
   banner.className = 'saving-banner ' + (totalGap >= 0 ? 'pos' : 'neg');
   const sign = totalGap >= 0 ? '+' : '';
   const econUrl = snapped ? `/economy?date=${snapped}` : '/economy';
-  const btnHtml = `<button class="btn-apply" style="width:auto; padding:6px 14px; margin-left:15px; margin-top:0; font-size:12px; display:inline-block; vertical-align:middle;" onclick="window.location.href='${econUrl}'">Voir l'analyse détaillée</button>`;
+  
+  const userRole = "{{ session.get('role') }}";
+  const btnHtml = userRole === 'admin' ? `<button class="btn-apply" style="width:auto; padding:6px 14px; margin-left:15px; margin-top:0; font-size:12px; display:inline-block; vertical-align:middle;" onclick="window.location.href='${econUrl}'">Voir l'analyse détaillée</button>` : '';
 
   if (totalGap >= 0) {
     banner.innerHTML = `Impact Comptable: <b>Produit (Reprise) de ${sign}${fmt(totalGap)}</b> pour la période <b>${periodLabel}</b>.` + btnHtml;

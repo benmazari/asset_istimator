@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Asset Estimator — HASNAOUI GROUPE</title>
+  <title>Asset Estimator — Medina Analyse</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <script src="https://unpkg.com/feather-icons"></script>
@@ -345,6 +345,29 @@
       color: white;
       box-shadow: 0 4px 12px var(--accent-light);
     }
+
+    /* Upload Styling */
+    .upload-zone {
+      border: 2px dashed var(--border);
+      border-radius: 12px;
+      padding: 24px;
+      text-align: center;
+      cursor: pointer;
+      background: var(--surface2);
+      transition: all 0.2s;
+    }
+    .upload-zone:hover {
+      border-color: var(--accent);
+      background: var(--accent-light);
+    }
+    .upload-status {
+      margin-top: 12px;
+      font-size: 12px;
+      font-weight: 600;
+      text-align: center;
+    }
+    .upload-status.ok { color: var(--ok); }
+    .upload-status.err { color: var(--err); }
   </style>
 </head>
 <body>
@@ -359,8 +382,8 @@
       </div>
     </div>
     <nav class="sidebar-nav">
-      <a href="/" class="active"><i data-feather="settings"></i> Générateur</a>
-      <a href="/medina_analyse"><i data-feather="calendar"></i> Medina Analyse</a>
+      <a href="/"><i data-feather="settings"></i> Générateur</a>
+      <a href="/medina_analyse" class="active"><i data-feather="calendar"></i> Medina Analyse</a>
       <a href="/dashboard"><i data-feather="pie-chart"></i> Tableau de bord</a>
       {% if session.get('role') == 'admin' %}
       <a href="/economy"><i data-feather="trending-up"></i> Analyse d'Économie</a>
@@ -382,11 +405,10 @@
     
     <!-- Topbar -->
     <header class="topbar">
-      <div class="page-title">Générateur d'Estimations</div>
+      <div class="page-title">Medina Analyse</div>
       <div class="topbar-right">
-        <div class="search-bar">
-          <i data-feather="search" style="width:16px; height:16px; color:var(--text-muted);"></i>
-          <input type="text" placeholder="Recherche rapide..." />
+        <div style="font-size: 13px; font-weight: 600; padding: 6px 12px; background: rgba(79, 125, 243, 0.1); color: var(--accent); border-radius: 8px;">
+          Société : 58 — EL MEDINA CENTER
         </div>
         <div class="profile">
           <div class="profile-img"><i data-feather="user" style="width:20px; height:20px;"></i></div>
@@ -401,22 +423,42 @@
     <!-- Content Area -->
     <main class="content-area">
       
-      <!-- Left Column (Filters & Cats) -->
+      <!-- Left Column (Upload & Config) -->
       <div class="left-col" style="display:flex; flex-direction:column; gap:24px;">
         
+        <!-- Upload Card -->
+        <div class="card">
+          <div class="card-title">
+            <div style="display:flex; align-items:center; gap:12px;">
+              <div style="background: var(--accent-light); padding: 8px; border-radius: 10px;">
+                <i data-feather="upload-cloud" style="width: 18px; height: 18px; color: var(--accent);"></i>
+              </div>
+              <span style="font-size: 15px; font-weight: 700;">Dates d'overrides Excel</span>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="upload-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
+              <i data-feather="file" style="width: 32px; height: 32px; color: var(--text-muted); margin-bottom: 8px;"></i>
+              <p style="font-size: 13px; font-weight: 500; color: var(--text); margin-bottom: 4px;">Importer medina_analyse.xlsx</p>
+              <p style="font-size: 11px; color: var(--text-muted);">Cliquez ou glissez-déposez le fichier ici</p>
+              <input type="file" id="file-input" style="display:none;" accept=".xlsx" onchange="handleFileSelect(this.files)" />
+            </div>
+            <div class="upload-status" id="upload-status">Fichier d'override optionnel.</div>
+          </div>
+        </div>
+
         <!-- Options Card -->
         <div class="card" style="padding: 0; overflow: hidden;">
-          <div class="card-title" style="cursor:pointer; display:flex; justify-content:space-between; align-items:center; padding: 24px; margin-bottom: 0; background: var(--surface2);" onclick="toggleFilters()">
+          <div class="card-title" style="display:flex; justify-content:space-between; align-items:center; padding: 24px; margin-bottom: 0; background: var(--surface2);">
             <div style="display:flex; align-items:center; gap:12px;">
               <div style="background: var(--accent-light); padding: 8px; border-radius: 10px;">
                 <i data-feather="settings" style="width: 18px; height: 18px; color: var(--accent);"></i>
               </div>
               <span style="font-size: 16px; font-weight: 700;">Configuration</span>
             </div>
-            <i data-feather="chevron-down" id="filter-chevron" style="transition: transform 0.3s; color: var(--text-muted);"></i>
           </div>
           
-          <div class="card-body" id="filter-body" style="display:none; padding: 24px; border-top: 1px solid var(--border);">
+          <div class="card-body" style="padding: 24px; border-top: 1px solid var(--border);">
             
             <div class="field">
               <label for="sel-fmt">Format de sortie</label>
@@ -438,13 +480,6 @@
             </div>
 
             <div class="field">
-              <label for="sel-societe">Société (optionnel)</label>
-              <select id="sel-societe">
-                <option value="">— Toutes —</option>
-              </select>
-            </div>
-
-            <div class="field">
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
                 <label style="margin-bottom:0;" id="inp-asset-label">ID immobilisation</label>
                 <div class="mode-btn-container">
@@ -458,19 +493,6 @@
             <div class="field">
               <label for="inp-asof">Date cible (Snapshot)</label>
               <input type="text" id="inp-asof" placeholder="ex: 31/12/2025" />
-            </div>
-
-            <div class="field">
-              <label for="inp-year-debut-type">Type de filtre Année / Date</label>
-              <select id="inp-year-debut-type">
-                <option value="start_date">Début d'amortissement</option>
-                <option value="purchase_date">Date d'acquisition</option>
-              </select>
-            </div>
-
-            <div class="field">
-              <label for="inp-year-debut">Année (AAAA) ou Date (JJ/MM/AAAA)</label>
-              <input type="text" id="inp-year-debut" placeholder="ex: 2025 ou 31/12/2025" />
             </div>
 
             <div class="field" style="flex-direction: row; align-items: center; gap: 10px; margin-top: 8px;">
@@ -527,7 +549,7 @@
           </div>
         </div>
 
-        <!-- Layout for Cats and Logs side-by-side on large screens, stacked on small -->
+        <!-- Layout for Cats and Logs side-by-side -->
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; flex: 1; min-height: 0;">
           
           <!-- Categories Card -->
@@ -597,6 +619,64 @@
   let catData  = [];
   let assetMode = 'id'; // 'id' | 'search'
 
+  // Drag and drop setup
+  const dropZone = document.getElementById('drop-zone');
+  ['dragenter', 'dragover'].forEach(eventName => {
+    dropZone.addEventListener(eventName, e => {
+      e.preventDefault();
+      dropZone.style.borderColor = 'var(--accent)';
+      dropZone.style.background = 'var(--accent-light)';
+    }, false);
+  });
+  ['dragleave', 'drop'].forEach(eventName => {
+    dropZone.addEventListener(eventName, e => {
+      e.preventDefault();
+      dropZone.style.borderColor = 'var(--border)';
+      dropZone.style.background = 'var(--surface2)';
+    }, false);
+  });
+  dropZone.addEventListener('drop', e => {
+    const dt = e.dataTransfer;
+    const files = dt.files;
+    handleFileSelect(files);
+  });
+
+  // Handle file upload
+  async function handleFileSelect(files) {
+    if (!files.length) return;
+    const file = files[0];
+    if (!file.name.endsWith('.xlsx')) {
+      showUploadStatus("Seuls les fichiers Excel (.xlsx) sont supportés.", false);
+      return;
+    }
+
+    showUploadStatus("Téléversement en cours...", null);
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+      const res = await fetch("/api/medina_upload", {
+        method: "POST",
+        body: formData
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showUploadStatus("✓ Fichier " + file.name + " téléversé avec succès.", true);
+        log("Fichier d'override Medina téléversé avec succès.", "lk");
+      } else {
+        showUploadStatus("Erreur: " + (data.error || "échec du téléversement"), false);
+      }
+    } catch (e) {
+      showUploadStatus("Erreur réseau lors du téléversement.", false);
+    }
+  }
+
+  function showUploadStatus(msg, success) {
+    const el = document.getElementById("upload-status");
+    el.textContent = msg;
+    el.className = "upload-status " + (success === true ? "ok" : success === false ? "err" : "");
+  }
+
   // ── Asset filter mode toggle ───────────────────────────────────────────────
   function setAssetMode(mode) {
     assetMode = mode;
@@ -620,13 +700,9 @@
     // Restore filter state from localStorage
     const savedDate = localStorage.getItem('amort_date') || '';
     const savedGran = localStorage.getItem('amort_gran') || 'monthly';
-    const savedYearDebut = localStorage.getItem('amort_year_debut') || '';
-    const savedYearDebutType = localStorage.getItem('amort_year_debut_type') || 'start_date';
     const savedAssetMode = localStorage.getItem('amort_asset_mode') || 'id';
     const savedNonAmortie = localStorage.getItem('amort_non_amortie') === 'true';
     document.getElementById('inp-asof').value = savedDate;
-    document.getElementById('inp-year-debut').value = savedYearDebut;
-    document.getElementById('inp-year-debut-type').value = savedYearDebutType;
     document.getElementById('chk-non-amortie').checked = savedNonAmortie;
     const granSel = document.getElementById('sel-gran');
     if ([...granSel.options].some(o => o.value === savedGran)) granSel.value = savedGran;
@@ -647,18 +723,6 @@
     } catch(e) {
       log('Erreur chargement config : ' + e, 'le');
     }
-
-    // Load filters (societes)
-    try {
-      const r2  = await fetch('/api/filters');
-      const fil = await r2.json();
-      const sel = document.getElementById('sel-societe');
-      (fil.societes || []).forEach(s => {
-        const o = document.createElement('option');
-        o.value = s; o.textContent = s;
-        sel.appendChild(o);
-      });
-    } catch(e) { /* non-blocking */ }
   })();
 
   // ── Categories ─────────────────────────────────────────────────────────────
@@ -819,6 +883,8 @@
   }
 
   // ── Generate ───────────────────────────────────────────────────────────────
+  let currentJobId = null;
+
   async function startGen() {
     const cats = [...document.querySelectorAll('.cat-item.active')]
                    .map(el => el.dataset.label);
@@ -826,17 +892,9 @@
 
     const asofRaw = document.getElementById('inp-asof').value.trim();
 
-    const yearDebut = document.getElementById('inp-year-debut').value.trim();
-    const yearDebutType = document.getElementById('inp-year-debut-type').value;
-    if (yearDebut && !/^(?:\d{4}|\d{2}\/\d{2}\/\d{4}|\d{4}-\d{2}-\d{2})$/.test(yearDebut)) {
-      log(`Format invalide '${yearDebut}' — format AAAA (ex: 2025) ou JJ/MM/AAAA (ex: 31/12/2025) requis.`, 'le'); return;
-    }
-
-    // Persist to localStorage for cross-page sharing
+    // Persist to localStorage
     localStorage.setItem('amort_date', asofRaw);
     localStorage.setItem('amort_gran', document.getElementById('sel-gran').value);
-    localStorage.setItem('amort_year_debut', yearDebut);
-    localStorage.setItem('amort_year_debut_type', yearDebutType);
     localStorage.setItem('amort_non_amortie', document.getElementById('chk-non-amortie').checked);
 
     clearLog(); setStatus('running');
@@ -845,20 +903,17 @@
     const assetVal = document.getElementById('inp-asset').value.trim();
     const body = {
       categories:      cats,
-      output_format:   document.getElementById('sel-fmt').value,
+      format:          document.getElementById('sel-fmt').value,
       granularity:     document.getElementById('sel-gran').value,
-      societe:         document.getElementById('sel-societe').value || null,
       asset_id:        (assetMode === 'id' && assetVal) ? assetVal : null,
       asset_search:    (assetMode === 'search' && assetVal) ? assetVal : null,
       as_of_date:      asofRaw || null,
-      year_debut:      yearDebut || null,
-      year_debut_type: yearDebutType,
       non_amortie:     document.getElementById('chk-non-amortie').checked,
     };
 
     let res;
     try {
-      res = await fetch('/api/generate', {
+      res = await fetch('/api/medina_generate', {
         method: 'POST', headers: {'Content-Type': 'application/json'},
         body: JSON.stringify(body),
       });
@@ -867,7 +922,9 @@
     const data = await res.json();
     if (!res.ok) { log(data.error || 'Erreur inconnue.', 'le'); setStatus('error'); return; }
 
-    // Poll /api/status
+    currentJobId = data.job_id;
+
+    // Poll status using /api/status (which maps to global _job status)
     let lastLen = 0;
     polling = setInterval(async () => {
       try {
@@ -880,7 +937,7 @@
         if (st.status === 'done' || st.status === 'error') {
           clearInterval(polling); polling = null;
           setStatus(st.status);
-          if (st.status === 'done') log('Génération terminée avec succès !', 'lk');
+          if (st.status === 'done') log('Génération Medina terminée avec succès !', 'lk');
           else log('La génération a échoué.', 'le');
         }
       } catch(e) { /* ignore polling errors */ }
@@ -888,14 +945,12 @@
   }
 
   // ── Download ───────────────────────────────────────────────────────────────
-  function download() { window.location.href = '/api/download'; }
-
-  function toggleFilters() {
-    const body = document.getElementById('filter-body');
-    const chev = document.getElementById('filter-chevron');
-    const isHidden = body.style.display === 'none' || body.style.display === '';
-    body.style.display = isHidden ? 'block' : 'none';
-    chev.style.transform = isHidden ? 'rotate(180deg)' : 'rotate(0deg)';
+  function download() {
+    if (currentJobId) {
+      window.location.href = `/api/download/${currentJobId}`;
+    } else {
+      window.location.href = '/api/download';
+    }
   }
 </script>
 </body>

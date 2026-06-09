@@ -18,7 +18,7 @@ import os
 import sys
 import warnings
 import math
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
 from dateutil.relativedelta import relativedelta
 
 import pandas as pd
@@ -32,6 +32,43 @@ sys.path.insert(0, SCRIPT_DIR)
 from db import get_connection
 from exporter import export_to_excel, export_to_csv
 
+
+
+def _parse_year_debut(val_s):
+    """Parse year_debut which can be a 4-digit year or a date (DD/MM/YYYY or YYYY-MM-DD)."""
+    if not val_s:
+        return None, None
+    val_s = str(val_s).strip()
+    if not val_s:
+        return None, None
+
+    from datetime import datetime as _dt
+    # Check DD/MM/YYYY
+    if "/" in val_s:
+        parts = val_s.split("/")
+        if len(parts) == 3:
+            try:
+                dt = _dt.strptime(val_s, "%d/%m/%Y").date()
+                return dt, "date"
+            except ValueError:
+                pass
+
+    # Check YYYY-MM-DD
+    if "-" in val_s and len(val_s) == 10:
+        try:
+            dt = _dt.strptime(val_s, "%Y-%m-%d").date()
+            return dt, "date"
+        except ValueError:
+            pass
+
+    # Check YYYY (4 digits)
+    if val_s.isdigit() and len(val_s) == 4:
+        try:
+            return int(val_s), "year"
+        except ValueError:
+            pass
+
+    return None, None
 
 # ── Virtual Categories Mapping ────────────────────────────────────────────────
 VIRTUAL_CATEGORIES = {
@@ -52,6 +89,128 @@ for _lbl, _data in VIRTUAL_CATEGORIES.items():
         VIRTUAL_OVERRIDES[_aid] = {"label": _lbl, "years": _data["years"]}
 
 
+_excel_override_cache = None
+
+def _get_excel_category_overrides():
+    """
+    Load change immo to another categ id.xlsx or Classeur1.xlsx and return {id_immo (int): new_cat_id (int)}.
+    Cached in-process.
+    """
+    global _excel_override_cache
+    if _excel_override_cache is not None:
+        return _excel_override_cache
+    try:
+        xl_path = os.path.join(SCRIPT_DIR, "change immo to another categ id.xlsx")
+        if not os.path.exists(xl_path):
+            xl_path = os.path.join(SCRIPT_DIR, "Classeur1.xlsx")
+        df = pd.read_excel(xl_path)
+        df.columns = [c.lower().strip() for c in df.columns]
+        id_col  = next((c for c in df.columns if "immo" in c or c == "id"), None)
+        cat_col = next((c for c in df.columns if "cat" in c), None)
+        if id_col and cat_col:
+            mapping = {
+                int(row[id_col]): int(row[cat_col])
+                for _, row in df.iterrows()
+                if pd.notna(row[id_col]) and pd.notna(row[cat_col])
+            }
+            _excel_override_cache = mapping
+            return mapping
+    except Exception as e:
+        print(f"[WARN] Could not load category overrides file: {e}")
+    _excel_override_cache = {}
+    return {}
+
+
+_excel_date_override_cache = None
+
+def _get_excel_date_overrides(log_fn=print):
+    """
+    Load medina_analyse.xlsx and return a dict mapping:
+    id_immo (int) -> {
+        "purchase_date": date|None,
+        "date_comptabilisation": date|None
+    }
+    """
+    global _excel_date_override_cache
+    if _excel_date_override_cache is not None:
+        return _excel_date_override_cache
+
+    xl_path = os.path.join(SCRIPT_DIR, "medina_analyse.xlsx")
+    if not os.path.exists(xl_path):
+        log_fn("[INFO] Fichier de forçage 'medina_analyse.xlsx' non trouvé dans le répertoire racine.")
+        _excel_date_override_cache = {}
+        return {}
+
+    try:
+        log_fn("[INFO] Lecture du fichier de forçage 'medina_analyse.xlsx'...")
+        df = pd.read_excel(xl_path)
+        # Normalise column names: lowercase and strip spaces
+        df.columns = [str(c).lower().strip() for c in df.columns]
+        
+        # Find ID column
+        id_col = next((c for c in df.columns if "immo" in c or c == "id"), None)
+        # Find Purchase Date column
+        acq_col = next((c for c in df.columns if "acq" in c or "achat" in c), None)
+        # Find Start Date column
+        start_col = next((c for c in df.columns if "debut" in c or "début" in c or "compta" in c), None)
+
+        if not id_col:
+            log_fn("[WARN] Aucune colonne d'identifiant (id_immo/id) trouvée dans medina_analyse.xlsx.")
+            _excel_date_override_cache = {}
+            return {}
+
+        mapping = {}
+        for _, row in df.iterrows():
+            if pd.isna(row[id_col]):
+                continue
+            try:
+                aid = int(row[id_col])
+            except ValueError:
+                continue
+
+            dates_override = {}
+            
+            # Helper to parse dates
+            def parse_cell_date(val):
+                if pd.isna(val):
+                    return None
+                if isinstance(val, (date, datetime)):
+                    return val.date() if isinstance(val, datetime) else val
+                val_s = str(val).strip()
+                if not val_s:
+                    return None
+                # Try common formats
+                for fmt in ("%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y", "%Y/%m/%d"):
+                    try:
+                        return datetime.strptime(val_s, fmt).date()
+                    except ValueError:
+                        pass
+                # Try pandas to_datetime
+                try:
+                    return pd.to_datetime(val_s).date()
+                except:
+                    pass
+                return None
+
+            if acq_col:
+                dates_override["purchase_date"] = parse_cell_date(row[acq_col])
+            if start_col:
+                dates_override["date_comptabilisation"] = parse_cell_date(row[start_col])
+
+            # Only add if at least one date is present
+            if dates_override.get("purchase_date") or dates_override.get("date_comptabilisation"):
+                mapping[aid] = dates_override
+
+        log_fn(f"[INFO] Réussi : {len(mapping)} forçages de dates chargés depuis medina_analyse.xlsx.")
+        _excel_date_override_cache = mapping
+        return mapping
+    except Exception as e:
+        log_fn(f"[WARN] Erreur lors du chargement de medina_analyse.xlsx : {e}")
+        _excel_date_override_cache = {}
+        return {}
+
+
+
 # ── SQL: fetch asset master data ──────────────────────────────────────────────
 
 
@@ -64,26 +223,21 @@ SELECT
     aaat.purchase_date          AS "Date d'acquisition",
     aaat.date_comptabilisation  AS "Date début d'amortissement",
     aaaf.name                   AS "Localisation",
-    gee.name                    AS "Equipement",
+    NULL::text                 AS "Equipement",
     aaat.unit_price             AS "Prix unitaire",
     aaat.costs                  AS "Autres frais",
-    aaat.purchase_value         AS "Valeur brute",
+    aaat.unit_price             AS "Valeur brute",
     aaat.tva_acquisition        AS "TVA d'acquisition",
     aaat.venal_value            AS "Valeur vénale",
     aaat.expert_value           AS "Valeur d'expertise",
     CONCAT(acck.name, ' (', rc_cout.name, ')') AS "Centre de coût",
     aaat.state                  AS "Statut",
     aaat.num_serie              AS "Numéro de série",
-    compte_immo.code || ' ' || compte_immo.name
-        || ' (' || compte_immo_company.name || ')'
-        AS "Compte d'immobilisation",
-    compte_dep.code || ' ' || compte_dep.name
-        || ' (' || compte_dep_company.name || ')'
-        AS "Compte de dépréciation",
-    compte_exp.code || ' ' || compte_exp.name
-        || ' (' || compte_exp_company.name || ')'
-        AS "Compte de dépréciation (charge)",
+    NULL::text                  AS "Compte d'immobilisation",
+    NULL::text                  AS "Compte de dépréciation",
+    NULL::text                  AS "Compte de dépréciation (charge)",
     aac.name                    AS "Catégorie d'immobilisation",
+    aac.id                      AS "ID Catégorie",
     aaat.dossier_complet        AS "Dossier complet",
     aaat.fournisseur            AS "Référence facture fournisseur",
     aaat.venal_value_date       AS "Date de valeur",
@@ -92,26 +246,17 @@ SELECT
     aaat.fournisseur_str        AS "Fournisseur",
     res_currency.name           AS "Devise",
     fv.name                     AS "Véhicule",
-    (hr_employee.name_related || ' ' || hr_employee.firstname)
-        AS "Employé affecté",
+    NULL::text                  AS "Employé affecté",
     ROUND((COALESCE(aaat.method_number, aac.method_number)::numeric / 12.0), 2) AS "Durée d'amortissement (Odoo)",
     aaat.old_id                 AS "Ancien ID"
 FROM account_asset_asset aaat
 JOIN account_asset_category aac ON aac.id = aaat.category_id
-LEFT JOIN gmao_equipment_equipment gee     ON aaat.equipement_id = gee.id
 LEFT JOIN fleet_vehicle fv                 ON aaat.vehicle_id = fv.id
 LEFT JOIN account_asset_affectation aaaf   ON aaat.affectation_id = aaaf.id
-LEFT JOIN hr_employee                      ON aaat.employee_affected_id = hr_employee.id
 LEFT JOIN res_currency                     ON aaat.currency_id = res_currency.id
 LEFT JOIN res_company societe_comptable    ON societe_comptable.id = aaat.company_id
 LEFT JOIN asset_center_cout acck           ON acck.id = aaat.center_cout_id
 LEFT JOIN res_company rc_cout              ON acck.company_id = rc_cout.id
-LEFT JOIN account_account compte_immo      ON compte_immo.id = aaat.account_asset_id
-LEFT JOIN res_company compte_immo_company  ON compte_immo_company.id = compte_immo.company_id
-LEFT JOIN account_account compte_dep       ON compte_dep.id = aaat.account_depreciation_id
-LEFT JOIN res_company compte_dep_company   ON compte_dep_company.id = compte_dep.company_id
-LEFT JOIN account_account compte_exp       ON compte_exp.id = aaat.account_expense_depreciation_id
-LEFT JOIN res_company compte_exp_company   ON compte_exp_company.id = compte_exp.company_id
 WHERE (aac.id = ANY(%s) {virtual_filter})
   {asset_filter}
   {societe_filter}
@@ -158,7 +303,9 @@ def _compute_schedule(asset_row: dict, years: int) -> list[dict]:
 
     purchase_value = float(asset_row["Valeur brute"] or 0)
 
-    end_date: date = (start + relativedelta(years=years)) - timedelta(days=1)
+    if years <= 0:
+        return []
+    end_date: date = (start + relativedelta(months=int(round(years * 12)))) - timedelta(days=1)
     # Standard French accounting: fixed 365-day year, no leap-year adjustment
     total_days = years * 365
     daily_amount = purchase_value / total_days
@@ -217,7 +364,7 @@ def _compute_schedule_daily(asset_row: dict, years: int) -> list[dict]:
 
     purchase_value = float(asset_row["Valeur brute"] or 0)
 
-    end_date: date = (start + relativedelta(years=years)) - timedelta(days=1)
+    end_date: date = (start + relativedelta(months=int(round(years * 12)))) - timedelta(days=1)
     # Standard French accounting: fixed 365-day year, no leap-year adjustment
     total_days = years * 365
     if total_days <= 0:
@@ -310,6 +457,7 @@ def generate(
     asset_search: str = None,
     non_amortie: bool = False,
     year_debut_type: str = "start_date",
+    is_medina: bool = False,
 ) -> str | None:
     """
     Main generation function.
@@ -353,8 +501,9 @@ def generate(
         if c.get("is_virtual"):
             lbl = c.get("label")
             yrs = c.get("years", 10)
+            v_cat_id = c["ids"][0] if c.get("ids") else None
             for aid in c.get("asset_ids", []):
-                VIRTUAL_OVERRIDES[aid] = {"label": lbl, "years": yrs}
+                VIRTUAL_OVERRIDES[aid] = {"label": lbl, "years": yrs, "cat_id": v_cat_id}
 
     conn = get_connection(cfg["database"])
     results = {}
@@ -376,17 +525,36 @@ def generate(
                 years = int(cat["months"]) / 12
 
             # ── 1. Fetch asset master rows ────────────────────────────────────
+            # Build virtual filter for virtual categories
             v_aids = []
             for cid in cat_ids:
                 for c in categories:
                     if c.get("is_virtual") and c["ids"][0] == cid:
                         v_aids.extend(c.get("asset_ids", []))
-            virtual_filter = f"OR aaat.id = ANY(ARRAY{v_aids})" if v_aids else ""
+
+            # Build Excel override filter: assets remapped to this category
+            excel_map = _get_excel_category_overrides()
+            excel_aids = [aid for aid, cid in excel_map.items() if cid in cat_ids]
+
+            all_extra_aids = list(set(v_aids + excel_aids))
+            virtual_filter = f"OR aaat.id = ANY(ARRAY{all_extra_aids})" if all_extra_aids else ""
 
             asset_filter = "AND aaat.id = %s" if asset_id else ""
-            societe_filter = "AND societe_comptable.name = %s" if societe else ""
-            date_col = "aaat.purchase_date" if year_debut_type == "purchase_date" else "aaat.date_comptabilisation"
-            year_debut_filter = f"AND EXTRACT(YEAR FROM {date_col}) = %s" if year_debut else ""
+            if is_medina:
+                societe_filter = "AND aaat.company_id = 58"
+                year_debut_filter = ""
+                yd_val, yd_type = None, None
+            else:
+                societe_filter = "AND societe_comptable.name = %s" if societe else ""
+                date_col = "aaat.purchase_date" if year_debut_type == "purchase_date" else "aaat.date_comptabilisation"
+                yd_val, yd_type = _parse_year_debut(year_debut)
+                if yd_type == "date":
+                    year_debut_filter = f"AND {date_col} = %s"
+                elif yd_type == "year":
+                    year_debut_filter = f"AND EXTRACT(YEAR FROM {date_col}) = %s"
+                else:
+                    year_debut_filter = ""
+
             search_filter = "AND (aaat.code ILIKE %s OR aaat.name ILIKE %s)" if asset_search else ""
             sql = ASSET_SQL.format(
                 virtual_filter=virtual_filter,
@@ -399,26 +567,45 @@ def generate(
             params: list = [cat_ids]
             if asset_id:
                 params.append(asset_id)
-            if societe:
+            if societe and not is_medina:
                 params.append(societe)
-            if year_debut:
-                params.append(year_debut)
+            if yd_val is not None and not is_medina:
+                params.append(yd_val)
             if asset_search:
                 s_param = f"%{asset_search}%"
                 params.append(s_param)
                 params.append(s_param)
 
             log_fn(f"Recuperation des immobilisations : {label} ...")
-            if societe:
-                log_fn(f"  Filtre societe : {societe}")
-            if year_debut:
-                log_fn(f"  Filtre annee debut : {year_debut}")
+            if is_medina:
+                log_fn("  Filtre societe : ID 58 (EL MEDINA CENTER HASNAOUI)")
+            else:
+                if societe:
+                    log_fn(f"  Filtre societe : {societe}")
+                if year_debut:
+                    log_fn(f"  Filtre annee debut : {year_debut}")
             if asset_search:
                 log_fn(f"  Filtre recherche immo : {asset_search}")
 
             with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
                 cur.execute(sql, params)
                 asset_rows = [dict(r) for r in cur.fetchall()]
+
+            # Load date overrides for Medina if applicable
+            if is_medina:
+                date_overrides = _get_excel_date_overrides(log_fn)
+                overridden_count = 0
+                for asset in asset_rows:
+                    aid = asset["id_immo"]
+                    if aid in date_overrides:
+                        overrides = date_overrides[aid]
+                        if overrides.get("date_comptabilisation"):
+                            asset["Date début d'amortissement"] = overrides["date_comptabilisation"]
+                        if overrides.get("purchase_date"):
+                            asset["Date d'acquisition"] = overrides["purchase_date"]
+                        overridden_count += 1
+                if overridden_count > 0:
+                    log_fn(f"  -> {overridden_count} immobilisation(s) mise(s) a jour avec les dates forcees du fichier Excel.")
 
             total_assets = len(asset_rows)
             log_fn(f"  -> {total_assets} immobilisation(s) trouvee(s)")
@@ -511,12 +698,24 @@ def generate(
                 eff_years = years
                 eff_label = label
                 asset_id_immo = asset["id_immo"]
-                
+
+                # If this asset is remapped to a DIFFERENT category by Excel override,
+                # skip it here — it will be emitted when that target category is processed.
+                if asset_id_immo in excel_map and excel_map[asset_id_immo] not in cat_ids:
+                    continue
+
                 # Check for virtual category override
                 if asset_id_immo in VIRTUAL_OVERRIDES:
                     eff_years = VIRTUAL_OVERRIDES[asset_id_immo]["years"]
                     eff_label = VIRTUAL_OVERRIDES[asset_id_immo]["label"]
-                    asset["Catégorie d'immobilisation"] = eff_label
+                    asset["ID Catégorie"] = VIRTUAL_OVERRIDES[asset_id_immo]["cat_id"]
+                    asset["Note"] = "A creer"
+                else:
+                    asset["Note"] = ""
+
+                # Check for Excel remapping override (real category reassignment)
+                if asset_id_immo in excel_map:
+                    asset["ID Catégorie"] = excel_map[asset_id_immo]
 
                 # Avoid duplicate rows by skipping virtual overrides when processing their base standard categories
                 if eff_label != label:
@@ -546,6 +745,8 @@ def generate(
                         real = lines_index.get((asset["id_immo"], d), {})
                         all_monthly_rows[eff_label].append({
                             **asset,
+                            "Nouvelle Catégorie":               eff_label,
+                            "Nouvelle Durée (ans)":             eff_years,
                             "Durée d'amortissement (Excel)":    eff_years,
                             "Date de dépréciation":             d,
                             "Amortissement journalier (Odoo)":  daily_old,
@@ -559,7 +760,8 @@ def generate(
                             "Amortissement courant estimé":      sched["base_amount"],
                             "Montant déjà amorti estimé":        sched["cum_estimated"],
                             "Période suivante estimée":          sched["remaining_estimated"],
-                            "Écart (Réel - Estimé)":             round(float(real.get("amount") or 0.0) - float(sched["base_amount"] or 0.0), 2),
+                            "Écart Cumulé (Réel - Estimé)":      round(float(real.get("depreciated_value") or 0.0) - float(sched["cum_estimated"] or 0.0), 2),
+                            "Écart Courant (Réel - Estimé)":     round(float(real.get("amount") or 0.0) - float(sched["base_amount"] or 0.0), 2),
                         })
 
                 # ── Daily schedule ───────────────────────────────────────────
@@ -580,6 +782,8 @@ def generate(
                         real = lines_index.get((asset["id_immo"], d), {})
                         all_daily_rows[f"{eff_label} (Journalier)"].append({
                             **asset,
+                            "Nouvelle Catégorie":                eff_label,
+                            "Nouvelle Durée (ans)":              eff_years,
                             "Durée d'amortissement (Excel)":     eff_years,
                             "Date de dépréciation":              d,
                             "Amortissement journalier (Odoo)":   daily_old,
@@ -593,7 +797,8 @@ def generate(
                             "Amortissement journalier estimé":    sched["base_amount"],
                             "Montant déjà amorti estimé (cumulé)": sched["cum_estimated"],
                             "Période suivante estimée":           sched["remaining_estimated"],
-                            "Écart (Réel - Estimé)":             round(float(real.get("amount") or 0.0) - float(sched["base_amount"] or 0.0), 2),
+                            "Écart Cumulé (Réel - Estimé)":      round(float(real.get("depreciated_value") or 0.0) - float(sched["cum_estimated"] or 0.0), 2),
+                            "Écart Courant (Réel - Estimé)":     round(float(real.get("amount") or 0.0) - float(sched["base_amount"] or 0.0), 2),
                         })
 
                 # ── Yearly schedule ──────────────────────────────────────────
@@ -614,6 +819,8 @@ def generate(
                         real = lines_index.get((asset["id_immo"], d), {})
                         all_yearly_rows[f"{eff_label} (Annuel)"].append({
                             **asset,
+                            "Nouvelle Catégorie":                eff_label,
+                            "Nouvelle Durée (ans)":              eff_years,
                             "Durée d'amortissement (Excel)":     eff_years,
                             "Date de dépréciation":              d,
                             "Amortissement journalier (Odoo)":   daily_old,
@@ -627,7 +834,8 @@ def generate(
                             "Amortissement annuel estimé":        sched["base_amount"],
                             "Montant déjà amorti estimé":         sched["cum_estimated"],
                             "Période suivante estimée":           sched["remaining_estimated"],
-                            "Écart (Réel - Estimé)":             round(float(real.get("amount") or 0.0) - float(sched["base_amount"] or 0.0), 2),
+                            "Écart Cumulé (Réel - Estimé)":      round(float(real.get("depreciated_value") or 0.0) - float(sched["cum_estimated"] or 0.0), 2),
+                            "Écart Courant (Réel - Estimé)":     round(float(real.get("amount") or 0.0) - float(sched["base_amount"] or 0.0), 2),
                         })
 
                 if progress_fn:

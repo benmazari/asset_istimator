@@ -405,9 +405,13 @@
     </div>
     <nav class="sidebar-nav">
       <a href="/"><i data-feather="settings"></i> Générateur</a>
+      <a href="/medina_analyse"><i data-feather="calendar"></i> Medina Analyse</a>
       <a href="/dashboard"><i data-feather="pie-chart"></i> Tableau de bord</a>
       <a href="/economy"><i data-feather="trending-up"></i> Analyse d'Économie</a>
+      {% if session.get('role') == 'admin' %}
       <a href="/config" class="active"><i data-feather="sliders"></i> Configuration</a>
+      {% endif %}
+      <a href="/logout" style="margin-top: auto; color: #ef4444;"><i data-feather="log-out"></i> Déconnexion</a>
     </nav>
     <div style="flex:1;"></div>
     <div class="sidebar-cta">

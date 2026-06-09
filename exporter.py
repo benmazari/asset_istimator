@@ -19,16 +19,16 @@ HEADER_FG   = "FFFFFF"   # white
 ALT_ROW_BG  = "EBF0FA"   # light blue-gray
 BORDER_CLR  = "C0C8D8"
 
+import re
+
+_ILLEGAL_XML_CHARS_RE = re.compile(
+    r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x84\x86-\x9f\ud800-\udfff\ufffe\uffff]"
+)
+
 def _clean_illegal_xml_chars(val):
     if not isinstance(val, str):
         return val
-    # Remove characters that are not allowed in XML/Excel
-    return "".join(c for c in val if (
-        ord(c) in {0x9, 0xA, 0xD} or 
-        (0x20 <= ord(c) <= 0xD7FF) or 
-        (0xE000 <= ord(c) <= 0xFFFD) or 
-        (0x10000 <= ord(c) <= 0x10FFFF)
-    ))
+    return _ILLEGAL_XML_CHARS_RE.sub("", val)
 
 
 def _style_sheet(ws, df: pd.DataFrame):
@@ -68,8 +68,39 @@ def _style_sheet(ws, df: pd.DataFrame):
 
     ws.freeze_panes = "A2"
 
+    # Pre-compute column properties once for performance
+    col_styles = []
+    for col_name in df.columns:
+        col_series = df[col_name]
+        is_numeric = pd.api.types.is_numeric_dtype(col_series)
+        is_id_or_code = "id" in col_name.lower() or "code" in col_name.lower() or "compte" in col_name.lower() or "ref" in col_name.lower()
+        
+        if is_numeric and not is_id_or_code:
+            align = align_right
+            num_fmt = '#,##0' if pd.api.types.is_integer_dtype(col_series) else '#,##0.00'
+        elif is_id_or_code or col_name.lower() in ["date", "période", "statut"]:
+            align = align_center
+            num_fmt = None
+        else:
+            align = align_left
+            num_fmt = None
+            
+        col_styles.append((align, num_fmt))
+
     # Data styling
     num_rows = len(df)
+    if num_rows > 5000:
+        for col_idx, col_name in enumerate(df.columns, start=1):
+            col_letter = get_column_letter(col_idx)
+            col_series = df[col_name].head(1000)
+            if len(df) and pd.api.types.is_numeric_dtype(col_series):
+                max_data_len = col_series.map(lambda x: len(f"{x:,.2f}") if isinstance(x, (int, float)) else len(str(x))).max()
+            else:
+                max_data_len = col_series.astype(str).str.len().max() if len(df) else 0
+            width = min(max(len(str(col_name)), max_data_len, 10) + 4, 45)
+            ws.column_dimensions[col_letter].width = width
+        return
+
     for row_idx in range(2, num_rows + 2):
         ws.row_dimensions[row_idx].height = 18
         
@@ -83,23 +114,10 @@ def _style_sheet(ws, df: pd.DataFrame):
             if use_alt:
                 cell.fill = fill_alt
                 
-            # Alignment & Number Formatting
-            col_series = df[col_name]
-            
-            # Smart alignment and number format based on dtype and column name
-            is_numeric = pd.api.types.is_numeric_dtype(col_series)
-            is_id_or_code = "id" in col_name.lower() or "code" in col_name.lower() or "compte" in col_name.lower() or "ref" in col_name.lower()
-            
-            if is_numeric and not is_id_or_code:
-                cell.alignment = align_right
-                if pd.api.types.is_integer_dtype(col_series):
-                    cell.number_format = '#,##0'
-                else:
-                    cell.number_format = '#,##0.00'
-            elif is_id_or_code or col_name.lower() in ["date", "période", "statut"]:
-                cell.alignment = align_center
-            else:
-                cell.alignment = align_left
+            align, num_fmt = col_styles[col_idx - 1]
+            cell.alignment = align
+            if num_fmt:
+                cell.number_format = num_fmt
 
     # ── Auto column widths ───────────────────────────────────────────────────
     for col_idx, col_name in enumerate(df.columns, start=1):
@@ -135,11 +153,12 @@ def export_to_excel(results: dict[str, pd.DataFrame], output_dir: str):
             sheet_name = re.sub(r'[\[\]\:\*\?\/\\]', '-', label[:31])
             if not sheet_name: sheet_name = "Sheet"
             
-            # Clean data: only on object (string) columns for speed and reliability
+            # Clean data: only on columns that might contain illegal XML characters for speed
             df_clean = df.copy()
             for col in df_clean.columns:
-                if df_clean[col].dtype == object:
-                    df_clean[col] = df_clean[col].apply(_clean_illegal_xml_chars)
+                if col in ["Désignation", "Code", "Nom", "Name", "designation", "code"]:
+                    if df_clean[col].dtype == object:
+                        df_clean[col] = df_clean[col].map(lambda x: _clean_illegal_xml_chars(x) if isinstance(x, str) else x)
             
             df_clean.to_excel(writer, sheet_name=sheet_name, index=False)
             ws = writer.sheets[sheet_name]
@@ -154,8 +173,9 @@ def export_to_excel(results: dict[str, pd.DataFrame], output_dir: str):
             )
             combined_clean = combined.copy()
             for col in combined_clean.columns:
-                if combined_clean[col].dtype == object:
-                    combined_clean[col] = combined_clean[col].apply(_clean_illegal_xml_chars)
+                if col in ["Désignation", "Code", "Nom", "Name", "designation", "code"]:
+                    if combined_clean[col].dtype == object:
+                        combined_clean[col] = combined_clean[col].map(lambda x: _clean_illegal_xml_chars(x) if isinstance(x, str) else x)
                     
             combined_clean.to_excel(writer, sheet_name="Tout", index=False)
             ws = writer.sheets["Tout"]
