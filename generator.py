@@ -646,7 +646,7 @@ def generate(
                 lines_params: list = [asset_ids]
             else:
                 _date_filter_val = dep_date or (as_of_date.strftime("%Y-%m-%d") if as_of_date else None)
-                date_filter = "AND depreciation_date = %s" if _date_filter_val else ""
+                date_filter = "AND depreciation_date <= %s" if _date_filter_val else ""
                 lines_params = [asset_ids]
                 if _date_filter_val:
                     lines_params.append(_date_filter_val)
