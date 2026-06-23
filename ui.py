@@ -163,7 +163,8 @@ from data_cache import global_cache
 
 def _run_generation(categories, output_format, asset_id=None, societe=None, dep_date=None,
                     granularity="monthly", from_date=None, as_of_date=None, sse_job_id=None, year_debut=None,
-                    asset_search=None, non_amortie=False, year_debut_type="start_date", is_medina=False):
+                    asset_search=None, non_amortie=False, year_debut_type="start_date", is_medina=False, ignore_overrides=False,
+                    vnc_filter="all"):
     """
     Background thread: uses generator.py for batched processing.
     If sse_job_id is given, logs are also pushed to the SSE queue for that job.
@@ -182,13 +183,13 @@ def _run_generation(categories, output_format, asset_id=None, societe=None, dep_
                 j = _sse_jobs.get(sse_job_id)
             if j:
                 j["log_q"].put(msg)
-
+ 
     try:
         combined_log("Initialisation de la generation...")
         cfg_path = os.path.join(SCRIPT_DIR, "config.yaml")
         with open(cfg_path, encoding="utf-8") as f:
             cfg = yaml.safe_load(f)
-
+ 
         raw_out = cfg.get("output", {}).get("directory", "output")
         out_dir = raw_out if os.path.isabs(raw_out) else os.path.join(SCRIPT_DIR, raw_out)
         fp = generate(
@@ -207,6 +208,8 @@ def _run_generation(categories, output_format, asset_id=None, societe=None, dep_
             asset_search=asset_search,
             non_amortie=non_amortie,
             is_medina=is_medina,
+            ignore_overrides=ignore_overrides,
+            vnc_filter=vnc_filter,
         )
     except Exception as e:
         combined_log(f"[ERREUR FATALE] {e}")
@@ -532,6 +535,9 @@ def api_dashboard():
         yd_val, yd_type = _parse_year_debut(year_debut_s)
         year_debut_type = request.args.get("year_debut_type") or "start_date"
         non_amortie = request.args.get("non_amortie") == "true"
+        vnc_filter   = request.args.get("vnc_filter") or "all"
+        if vnc_filter == "positive":
+            non_amortie = True
 
         if target_date:
             if date_str_raw and len(date_str_raw.strip()) == 4 and date_str_raw.strip().isdigit():
@@ -639,19 +645,23 @@ def api_dashboard():
                     s = asset_search.lower()
                     if s not in (a["code"] or "").lower() and s not in (a["asset_name"] or "").lower(): continue
                 
-                # Non-amortie filter (REAL-based)
-                if non_amortie:
-                    if a.get("state") == "close":
+                # VNC filter (REAL-based)
+                is_close = a.get("state") == "close"
+                a_lines = cached_lines.get(a["id_immo"], [])
+                real_cum = 0.0
+                if a_lines:
+                    relevant = [l for l in a_lines if (not date_str or l[0] <= date_str)]
+                    if relevant:
+                        last_line = sorted(relevant, key=lambda x: x[0])[-1]
+                        real_cum = last_line[2] + last_line[1]
+                is_fully_amortized = is_close or (real_cum >= a["purchase_value"] - 0.01)
+
+                if vnc_filter == "positive" or non_amortie:
+                    if is_fully_amortized:
                         continue
-                    # Check latest real cumulative depreciation
-                    a_lines = cached_lines.get(a["id_immo"], [])
-                    if a_lines:
-                        # Find latest line BEFORE OR AT date_str if provided, or absolute latest
-                        relevant = [l for l in a_lines if (not date_str or l[0] <= date_str)]
-                        if relevant:
-                            latest_cum = sorted(relevant, key=lambda x: x[0])[-1][2]
-                            if latest_cum >= a["purchase_value"] - 0.01:
-                                continue
+                elif vnc_filter == "zero":
+                    if not is_fully_amortized:
+                        continue
                 
                 asset_rows.append(a)
                 
@@ -664,7 +674,7 @@ def api_dashboard():
                     cum_real = 0.0
                     if valid_lines:
                         valid_lines.sort(key=lambda x: x[0])
-                        cum_real = valid_lines[-1][2]
+                        cum_real = valid_lines[-1][2] + valid_lines[-1][1]
                     
                     period_real = sum(item[1] for item in cached_lines.get(aid, []) if first_day_str <= item[0] <= last_day_str)
                     date_lines[aid] = (float(cum_real), float(period_real))
@@ -707,7 +717,13 @@ def api_dashboard():
                            aaat.name AS asset_name,
                            aaat.purchase_date,
                            aaat.date_comptabilisation AS start_date,
-                           aaat.unit_price AS purchase_value,
+                            ROUND(
+                                (
+                                    (COALESCE(aaat.unit_price, 0) * COALESCE(aaat.quantite, 0))
+                                    + COALESCE(aaat.costs, 0)
+                                )::numeric,
+                                2
+                            ) AS purchase_value,
                            aaat.method_number,
                            aac.id AS cat_id,
                            COALESCE(societe_comptable.name, 'Non défini') AS company_name,
@@ -728,11 +744,19 @@ def api_dashboard():
                     elif aid in v_map:
                         d["cat_id"] = v_map[aid]
                     
-                    # Apply non-amortie filter for non-cached path too
-                    # We'll need real lines to be sure, which are fetched later if date_str is present
-                    # but we can at least check the 'close' state here.
-                    if non_amortie and d.get("state") == "close":
+                    if d["cat_id"] not in all_cat_ids:
                         continue
+                    
+                    # Apply VNC filter (pass 1: check 'close' state)
+                    is_close = d.get("state") == "close"
+                    if vnc_filter == "positive" or non_amortie:
+                        if is_close:
+                            continue
+                    elif vnc_filter == "zero":
+                        # If date_str is present, we will do a second pass check with exact cumulative real.
+                        # If date_str is not present, we rely on 'close' state as a proxy.
+                        if not date_str and not is_close:
+                            continue
                         
                     asset_rows.append(d)
 
@@ -743,13 +767,13 @@ def api_dashboard():
                 if asset_ids:
                     with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
                         cur.execute(f"""
-                            SELECT DISTINCT ON (asset_id) asset_id, depreciated_value
+                            SELECT DISTINCT ON (asset_id) asset_id, depreciated_value, amount
                             FROM account_asset_depreciation_line
                             WHERE asset_id = ANY(%s) AND depreciation_date <= %s
                             ORDER BY asset_id, depreciation_date DESC
                         """, [asset_ids, date_str])
                         # Cast to float to avoid TypeError with Decimal
-                        cum_map = {r["asset_id"]: float(r["depreciated_value"] or 0) for r in cur.fetchall()}
+                        cum_map = {r["asset_id"]: float(r["depreciated_value"] or 0) + float(r["amount"] or 0) for r in cur.fetchall()}
                         
                         cur.execute(f"""
                             SELECT asset_id, SUM(amount) AS period_amt
@@ -761,17 +785,25 @@ def api_dashboard():
                         
                         date_lines = {aid: (cum_map.get(aid, 0.0), period_map.get(aid, 0.0)) for aid in asset_ids}
                         
-                        # Second pass for non_amortie if not cached
-                        if non_amortie:
-                            new_rows = []
-                            for r in asset_rows:
-                                aid = r["id_immo"]
-                                real_cum = date_lines.get(aid, (0.0, 0.0))[0]
-                                pv = float(r["purchase_value"] or 0)
-                                if real_cum < pv - 0.01:
+                        # Second pass for VNC filter if not cached
+                        new_rows = []
+                        for r in asset_rows:
+                            aid = r["id_immo"]
+                            real_cum = date_lines.get(aid, (0.0, 0.0))[0]
+                            pv = float(r["purchase_value"] or 0)
+                            is_close = r.get("state") == "close"
+                            is_fully_amortized = is_close or (real_cum >= pv - 0.01)
+
+                            if vnc_filter == "positive" or non_amortie:
+                                if not is_fully_amortized:
                                     new_rows.append(r)
-                            asset_rows = new_rows
-                            asset_ids = [r["id_immo"] for r in asset_rows]
+                            elif vnc_filter == "zero":
+                                if is_fully_amortized:
+                                    new_rows.append(r)
+                            else:
+                                new_rows.append(r)
+                        asset_rows = new_rows
+                        asset_ids = [r["id_immo"] for r in asset_rows]
                 else:
                     date_lines = {}
                 lines = []  # not needed for evolution in date mode
@@ -810,6 +842,9 @@ def api_dashboard():
                             cid = excel_map[aid]
                         elif aid in v_map:
                             cid = v_map[aid]
+                        
+                        if cid not in all_cat_ids:
+                            continue
                         real_by_cat_id[cid] = real_by_cat_id.get(cid, 0.0) + amt
                         real_by_company[comp] = real_by_company.get(comp, 0.0) + amt
                         real_by_comp_cat_id[(comp, cid)] = real_by_comp_cat_id.get((comp, cid), 0.0) + amt
@@ -1492,6 +1527,8 @@ def api_generate():
     year_debut = body.get("year_debut") or None
     year_debut_type = body.get("year_debut_type") or "start_date"
     societe      = body.get("societe") or None
+    ignore_overrides = body.get("ignore_overrides", False)
+    vnc_filter   = body.get("vnc_filter", "all")
 
     if not categories:
         return jsonify({"error": "Aucune categorie selectionnee."}), 400
@@ -1540,6 +1577,8 @@ def api_generate():
                 year_debut_type=year_debut_type,
                 societe=societe,
                 non_amortie=body.get("non_amortie", False),
+                ignore_overrides=ignore_overrides,
+                vnc_filter=vnc_filter,
             ),
             daemon=True,
         )
@@ -1576,6 +1615,8 @@ def api_generate():
                 year_debut=year_debut,
                 year_debut_type=year_debut_type,
                 non_amortie=body.get("non_amortie", False),
+                ignore_overrides=ignore_overrides,
+                vnc_filter=vnc_filter,
             ),
             daemon=True,
         )
@@ -1704,6 +1745,8 @@ def api_medina_generate():
     categories = body.get("categories", [])
     output_format = body.get("format", "excel")
     granularity = body.get("granularity", "monthly")
+    ignore_overrides = body.get("ignore_overrides", False)
+    vnc_filter = body.get("vnc_filter", "all")
     
     asset_id_raw = body.get("asset_id") or None
     asset_id = int(asset_id_raw) if asset_id_raw and str(asset_id_raw).isdigit() else None
@@ -1751,6 +1794,8 @@ def api_medina_generate():
             societe=None,
             non_amortie=body.get("non_amortie", False),
             is_medina=True,
+            ignore_overrides=ignore_overrides,
+            vnc_filter=vnc_filter,
         ),
         daemon=True,
     )

@@ -473,9 +473,18 @@
               <input type="text" id="inp-year-debut" placeholder="ex: 2025 ou 31/12/2025" />
             </div>
 
+            <div class="field">
+              <label for="sel-vnc-filter">Filtrer par VNC (Valeur Nette Comptable)</label>
+              <select id="sel-vnc-filter">
+                <option value="all">Toutes les immobilisations (VNC ≥ 0)</option>
+                <option value="positive">Uniquement VNC > 0 (En cours d'amortissement)</option>
+                <option value="zero">Uniquement VNC = 0 (Entièrement amorties)</option>
+              </select>
+            </div>
+
             <div class="field" style="flex-direction: row; align-items: center; gap: 10px; margin-top: 8px;">
-              <input type="checkbox" id="chk-non-amortie" style="width: 20px; height: 20px; cursor: pointer;" />
-              <label for="chk-non-amortie" style="cursor: pointer; font-size: 13px; color: var(--text); text-transform: none; letter-spacing: 0;">Exclure amorties</label>
+              <input type="checkbox" id="chk-ignore-overrides" style="width: 20px; height: 20px; cursor: pointer;" />
+              <label for="chk-ignore-overrides" style="cursor: pointer; font-size: 13px; color: var(--text); text-transform: none; letter-spacing: 0;">Mode Odoo Brut (ignorer transferts/virtuels)</label>
             </div>
 
             <div class="warn-box" id="gran-warn">
@@ -624,10 +633,13 @@
     const savedYearDebutType = localStorage.getItem('amort_year_debut_type') || 'start_date';
     const savedAssetMode = localStorage.getItem('amort_asset_mode') || 'id';
     const savedNonAmortie = localStorage.getItem('amort_non_amortie') === 'true';
+    const savedVncFilter = localStorage.getItem('amort_vnc_filter') || (savedNonAmortie ? 'positive' : 'all');
+    const savedIgnoreOverrides = localStorage.getItem('amort_ignore_overrides') === 'true';
     document.getElementById('inp-asof').value = savedDate;
     document.getElementById('inp-year-debut').value = savedYearDebut;
     document.getElementById('inp-year-debut-type').value = savedYearDebutType;
-    document.getElementById('chk-non-amortie').checked = savedNonAmortie;
+    document.getElementById('sel-vnc-filter').value = savedVncFilter;
+    document.getElementById('chk-ignore-overrides').checked = savedIgnoreOverrides;
     const granSel = document.getElementById('sel-gran');
     if ([...granSel.options].some(o => o.value === savedGran)) granSel.value = savedGran;
     onGranChange(granSel.value);
@@ -832,12 +844,16 @@
       log(`Format invalide '${yearDebut}' — format AAAA (ex: 2025) ou JJ/MM/AAAA (ex: 31/12/2025) requis.`, 'le'); return;
     }
 
+    const vncFilter = document.getElementById('sel-vnc-filter').value;
+
     // Persist to localStorage for cross-page sharing
     localStorage.setItem('amort_date', asofRaw);
     localStorage.setItem('amort_gran', document.getElementById('sel-gran').value);
     localStorage.setItem('amort_year_debut', yearDebut);
     localStorage.setItem('amort_year_debut_type', yearDebutType);
-    localStorage.setItem('amort_non_amortie', document.getElementById('chk-non-amortie').checked);
+    localStorage.setItem('amort_vnc_filter', vncFilter);
+    localStorage.setItem('amort_non_amortie', vncFilter === 'positive' ? 'true' : 'false');
+    localStorage.setItem('amort_ignore_overrides', document.getElementById('chk-ignore-overrides').checked);
 
     clearLog(); setStatus('running');
     if (polling) { clearInterval(polling); polling = null; }
@@ -853,7 +869,9 @@
       as_of_date:      asofRaw || null,
       year_debut:      yearDebut || null,
       year_debut_type: yearDebutType,
-      non_amortie:     document.getElementById('chk-non-amortie').checked,
+      vnc_filter:      vncFilter,
+      non_amortie:     vncFilter === 'positive',
+      ignore_overrides: document.getElementById('chk-ignore-overrides').checked,
     };
 
     let res;

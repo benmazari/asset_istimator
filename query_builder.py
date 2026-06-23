@@ -120,7 +120,13 @@ SELECT
     NULL::text                 AS "Equipement",
     aaat.unit_price             AS "Prix unitaire",
     aaat.costs                  AS "Autres frais",
-    aaat.unit_price             AS "Valeur brute",
+    ROUND(
+        (
+            (COALESCE(aaat.unit_price, 0) * COALESCE(aaat.quantite, 0))
+            + COALESCE(aaat.costs, 0)
+        )::numeric,
+        2
+    )                           AS "Valeur brute",
     aaat.tva_acquisition        AS "TVA d'acquisition",
     aaat.venal_value            AS "Valeur vénale",
     aaat.expert_value           AS "Valeur d'expertise",

@@ -226,7 +226,13 @@ SELECT
     NULL::text                 AS "Equipement",
     aaat.unit_price             AS "Prix unitaire",
     aaat.costs                  AS "Autres frais",
-    aaat.unit_price             AS "Valeur brute",
+    ROUND(
+        (
+            (COALESCE(aaat.unit_price, 0) * COALESCE(aaat.quantite, 0))
+            + COALESCE(aaat.costs, 0)
+        )::numeric,
+        2
+    )                           AS "Valeur brute",
     aaat.tva_acquisition        AS "TVA d'acquisition",
     aaat.venal_value            AS "Valeur vénale",
     aaat.expert_value           AS "Valeur d'expertise",
@@ -458,6 +464,8 @@ def generate(
     non_amortie: bool = False,
     year_debut_type: str = "start_date",
     is_medina: bool = False,
+    ignore_overrides: bool = False,
+    vnc_filter: str = "all",         # 'all' | 'positive' | 'zero'
 ) -> str | None:
     """
     Main generation function.
@@ -511,6 +519,10 @@ def generate(
 
     try:
         for cat in categories:
+            if ignore_overrides and cat.get("is_virtual"):
+                log_fn(f"Ignore la categorie virtuelle '{cat.get('label')}' en mode Odoo brut.")
+                continue
+
             # Handle both formats: new `ids` + `label`, or old `pattern`
             if "ids" in cat:
                 cat_ids = cat["ids"]
@@ -527,17 +539,22 @@ def generate(
             # ── 1. Fetch asset master rows ────────────────────────────────────
             # Build virtual filter for virtual categories
             v_aids = []
-            for cid in cat_ids:
-                for c in categories:
-                    if c.get("is_virtual") and c["ids"][0] == cid:
-                        v_aids.extend(c.get("asset_ids", []))
+            if not ignore_overrides:
+                for cid in cat_ids:
+                    for c in categories:
+                        if c.get("is_virtual") and c["ids"][0] == cid:
+                            v_aids.extend(c.get("asset_ids", []))
 
             # Build Excel override filter: assets remapped to this category
-            excel_map = _get_excel_category_overrides()
-            excel_aids = [aid for aid, cid in excel_map.items() if cid in cat_ids]
-
-            all_extra_aids = list(set(v_aids + excel_aids))
-            virtual_filter = f"OR aaat.id = ANY(ARRAY{all_extra_aids})" if all_extra_aids else ""
+            if ignore_overrides:
+                excel_map = {}
+                all_extra_aids = []
+                virtual_filter = ""
+            else:
+                excel_map = _get_excel_category_overrides()
+                excel_aids = [aid for aid, cid in excel_map.items() if cid in cat_ids]
+                all_extra_aids = list(set(v_aids + excel_aids))
+                virtual_filter = f"OR aaat.id = ANY(ARRAY{all_extra_aids})" if all_extra_aids else ""
 
             asset_filter = "AND aaat.id = %s" if asset_id else ""
             if is_medina:
@@ -701,11 +718,11 @@ def generate(
 
                 # If this asset is remapped to a DIFFERENT category by Excel override,
                 # skip it here — it will be emitted when that target category is processed.
-                if asset_id_immo in excel_map and excel_map[asset_id_immo] not in cat_ids:
+                if not ignore_overrides and asset_id_immo in excel_map and excel_map[asset_id_immo] not in cat_ids:
                     continue
 
                 # Check for virtual category override
-                if asset_id_immo in VIRTUAL_OVERRIDES:
+                if not ignore_overrides and asset_id_immo in VIRTUAL_OVERRIDES:
                     eff_years = VIRTUAL_OVERRIDES[asset_id_immo]["years"]
                     eff_label = VIRTUAL_OVERRIDES[asset_id_immo]["label"]
                     asset["ID Catégorie"] = VIRTUAL_OVERRIDES[asset_id_immo]["cat_id"]
@@ -714,7 +731,7 @@ def generate(
                     asset["Note"] = ""
 
                 # Check for Excel remapping override (real category reassignment)
-                if asset_id_immo in excel_map:
+                if not ignore_overrides and asset_id_immo in excel_map:
                     asset["ID Catégorie"] = excel_map[asset_id_immo]
 
                 # Avoid duplicate rows by skipping virtual overrides when processing their base standard categories
@@ -737,11 +754,19 @@ def generate(
                             continue
                         if from_date and d < from_date:
                             continue
-                        if non_amortie:
-                            real_data = lines_index.get((asset["id_immo"], d), {})
-                            real_cum = real_data.get("depreciated_value", 0)
-                            if asset.get("Statut") == "close" or (real_cum and real_cum >= pv - 0.01):
+                        
+                        # VNC filter
+                        real_data = lines_index.get((asset["id_immo"], d), {})
+                        real_cum = float(real_data.get("depreciated_value") or 0.0) + float(real_data.get("amount") or 0.0)
+                        is_close = asset.get("Statut") == "close"
+                        is_fully_amortized = is_close or (real_cum >= pv - 0.01)
+                        if vnc_filter == "positive" or non_amortie:
+                            if is_fully_amortized:
                                 continue
+                        elif vnc_filter == "zero":
+                            if not is_fully_amortized:
+                                continue
+
                         real = lines_index.get((asset["id_immo"], d), {})
                         all_monthly_rows[eff_label].append({
                             **asset,
@@ -753,15 +778,17 @@ def generate(
                             "Amortissement journalier (estimé)": daily_new,
                             "Nom amortissement":                 real.get("name"),
                             "Type":                              real.get("type"),
-                            "Montant déjà amorti réel":          real.get("depreciated_value"),
+                            "Montant déjà amorti réel":          round(float(real.get("depreciated_value") or 0.0) + float(real.get("amount") or 0.0), 2) if real else None,
                             "Amortissement courant réel":        real.get("amount"),
                             "Période suivante réelle":           real.get("remaining_value"),
+                            "VNC réelle":                        round(float(real.get("remaining_value") or 0.0), 2) if real else None,
                             "Comptabilisé":                      real.get("move_check"),
                             "Amortissement courant estimé":      sched["base_amount"],
                             "Montant déjà amorti estimé":        sched["cum_estimated"],
                             "Période suivante estimée":          sched["remaining_estimated"],
-                            "Écart Cumulé (Réel - Estimé)":      round(float(real.get("depreciated_value") or 0.0) - float(sched["cum_estimated"] or 0.0), 2),
-                            "Écart Courant (Réel - Estimé)":     round(float(real.get("amount") or 0.0) - float(sched["base_amount"] or 0.0), 2),
+                            "VNC estimée":                       round(pv - float(sched["cum_estimated"] or 0.0), 2),
+                            "Écart Cumulé (Réel - Estimé)":      round((float(real.get("depreciated_value") or 0.0) + float(real.get("amount") or 0.0)) - float(sched["cum_estimated"] or 0.0), 2) if real else None,
+                            "Écart Courant (Réel - Estimé)":     round(float(real.get("amount") or 0.0) - float(sched["base_amount"] or 0.0), 2) if real else None,
                         })
 
                 # ── Daily schedule ───────────────────────────────────────────
@@ -774,11 +801,19 @@ def generate(
                             continue
                         if from_date and d < from_date:
                             continue
-                        if non_amortie:
-                            real_data = lines_index.get((asset["id_immo"], d), {})
-                            real_cum = real_data.get("depreciated_value", 0)
-                            if asset.get("Statut") == "close" or (real_cum and real_cum >= pv - 0.01):
+                        
+                        # VNC filter
+                        real_data = lines_index.get((asset["id_immo"], d), {})
+                        real_cum = float(real_data.get("depreciated_value") or 0.0) + float(real_data.get("amount") or 0.0)
+                        is_close = asset.get("Statut") == "close"
+                        is_fully_amortized = is_close or (real_cum >= pv - 0.01)
+                        if vnc_filter == "positive" or non_amortie:
+                            if is_fully_amortized:
                                 continue
+                        elif vnc_filter == "zero":
+                            if not is_fully_amortized:
+                                continue
+
                         real = lines_index.get((asset["id_immo"], d), {})
                         all_daily_rows[f"{eff_label} (Journalier)"].append({
                             **asset,
@@ -790,17 +825,19 @@ def generate(
                             "Amortissement journalier (estimé)": daily_new,
                             "Nom amortissement":                  real.get("name"),
                             "Type":                               real.get("type"),
-                            "Montant déjà amorti réel":           real.get("depreciated_value"),
+                            "Montant déjà amorti réel":           round(float(real.get("depreciated_value") or 0.0) + float(real.get("amount") or 0.0), 2) if real else None,
                             "Amortissement courant réel":         real.get("amount"),
                             "Période suivante réelle":            real.get("remaining_value"),
+                            "VNC réelle":                         round(float(real.get("remaining_value") or 0.0), 2) if real else None,
                             "Comptabilisé":                       real.get("move_check"),
                             "Amortissement journalier estimé":    sched["base_amount"],
                             "Montant déjà amorti estimé (cumulé)": sched["cum_estimated"],
                             "Période suivante estimée":           sched["remaining_estimated"],
-                            "Écart Cumulé (Réel - Estimé)":      round(float(real.get("depreciated_value") or 0.0) - float(sched["cum_estimated"] or 0.0), 2),
-                            "Écart Courant (Réel - Estimé)":     round(float(real.get("amount") or 0.0) - float(sched["base_amount"] or 0.0), 2),
+                            "VNC estimée":                        round(pv - float(sched["cum_estimated"] or 0.0), 2),
+                            "Écart Cumulé (Réel - Estimé)":      round((float(real.get("depreciated_value") or 0.0) + float(real.get("amount") or 0.0)) - float(sched["cum_estimated"] or 0.0), 2) if real else None,
+                            "Écart Courant (Réel - Estimé)":     round(float(real.get("amount") or 0.0) - float(sched["base_amount"] or 0.0), 2) if real else None,
                         })
-
+ 
                 # ── Yearly schedule ──────────────────────────────────────────
                 if run_yearly:
                     if f"{eff_label} (Annuel)" not in all_yearly_rows:
@@ -811,11 +848,19 @@ def generate(
                             continue
                         if from_date and d < from_date:
                             continue
-                        if non_amortie:
-                            real_data = lines_index.get((asset["id_immo"], d), {})
-                            real_cum = real_data.get("depreciated_value", 0)
-                            if asset.get("Statut") == "close" or (real_cum and real_cum >= pv - 0.01):
+                        
+                        # VNC filter
+                        real_data = lines_index.get((asset["id_immo"], d), {})
+                        real_cum = float(real_data.get("depreciated_value") or 0.0) + float(real_data.get("amount") or 0.0)
+                        is_close = asset.get("Statut") == "close"
+                        is_fully_amortized = is_close or (real_cum >= pv - 0.01)
+                        if vnc_filter == "positive" or non_amortie:
+                            if is_fully_amortized:
                                 continue
+                        elif vnc_filter == "zero":
+                            if not is_fully_amortized:
+                                continue
+
                         real = lines_index.get((asset["id_immo"], d), {})
                         all_yearly_rows[f"{eff_label} (Annuel)"].append({
                             **asset,
@@ -827,15 +872,17 @@ def generate(
                             "Amortissement journalier (estimé)": daily_new,
                             "Nom amortissement":                  real.get("name"),
                             "Type":                               real.get("type"),
-                            "Montant déjà amorti réel":           real.get("depreciated_value"),
+                            "Montant déjà amorti réel":           round(float(real.get("depreciated_value") or 0.0) + float(real.get("amount") or 0.0), 2) if real else None,
                             "Amortissement courant réel":         real.get("amount"),
                             "Période suivante réelle":            real.get("remaining_value"),
+                            "VNC réelle":                         round(float(real.get("remaining_value") or 0.0), 2) if real else None,
                             "Comptabilisé":                       real.get("move_check"),
                             "Amortissement annuel estimé":        sched["base_amount"],
                             "Montant déjà amorti estimé":         sched["cum_estimated"],
                             "Période suivante estimée":           sched["remaining_estimated"],
-                            "Écart Cumulé (Réel - Estimé)":      round(float(real.get("depreciated_value") or 0.0) - float(sched["cum_estimated"] or 0.0), 2),
-                            "Écart Courant (Réel - Estimé)":     round(float(real.get("amount") or 0.0) - float(sched["base_amount"] or 0.0), 2),
+                            "VNC estimée":                        round(pv - float(sched["cum_estimated"] or 0.0), 2),
+                            "Écart Cumulé (Réel - Estimé)":      round((float(real.get("depreciated_value") or 0.0) + float(real.get("amount") or 0.0)) - float(sched["cum_estimated"] or 0.0), 2) if real else None,
+                            "Écart Courant (Réel - Estimé)":     round(float(real.get("amount") or 0.0) - float(sched["base_amount"] or 0.0), 2) if real else None,
                         })
 
                 if progress_fn:

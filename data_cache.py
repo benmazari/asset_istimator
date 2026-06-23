@@ -48,7 +48,13 @@ class DataCache:
                            aaat.name,
                            aaat.purchase_date, 
                            aaat.date_comptabilisation,
-                           aaat.unit_price, 
+                           ROUND(
+                               (
+                                   (COALESCE(aaat.unit_price, 0) * COALESCE(aaat.quantite, 0))
+                                   + COALESCE(aaat.costs, 0)
+                               )::numeric,
+                               2
+                           ),
                            aaat.method_number,
                            aaat.method_period,
                            aac.id AS cat_id,

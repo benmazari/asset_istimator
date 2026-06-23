@@ -535,11 +535,12 @@
               </select>
             </div>
             <div class="field">
-              <label>État d'amortissement</label>
-              <div style="height: 44px; display: flex; align-items: center; gap: 10px;">
-                <input type="checkbox" id="f-non-amortie" style="width: 20px; height: 20px; cursor: pointer;" />
-                <label for="f-non-amortie" style="cursor: pointer; font-size: 13px; color: var(--text); text-transform: none; letter-spacing: 0;">Exclure amorties</label>
-              </div>
+              <label>Filtrer par VNC (Valeur Nette Comptable)</label>
+              <select id="f-vnc-filter">
+                <option value="all">Toutes les immobilisations (VNC ≥ 0)</option>
+                <option value="positive">Uniquement VNC > 0 (En cours d'amortissement)</option>
+                <option value="zero">Uniquement VNC = 0 (Entièrement amorties)</option>
+              </select>
             </div>
           </div>
 
@@ -719,11 +720,12 @@ async function boot() {
   const savedYearDebut = localStorage.getItem('amort_year_debut') || '';
   const savedYearDebutType = localStorage.getItem('amort_year_debut_type') || 'start_date';
   const savedNonAmortie = localStorage.getItem('amort_non_amortie') === 'true';
+  const savedVncFilter = localStorage.getItem('amort_vnc_filter') || (savedNonAmortie ? 'positive' : 'all');
   
   document.getElementById('f-date').value = savedDate;
   document.getElementById('f-year-debut').value = savedYearDebut;
   document.getElementById('f-year-debut-type').value = savedYearDebutType;
-  document.getElementById('f-non-amortie').checked = savedNonAmortie;
+  document.getElementById('f-vnc-filter').value = savedVncFilter;
   
   const granSel = document.getElementById('f-gran');
   if ([...granSel.options].some(o => o.value === savedGran)) granSel.value = savedGran;
@@ -855,13 +857,14 @@ async function loadDashboard() {
   const search  = document.getElementById('f-asset-search').value;
   const yearDeb = document.getElementById('f-year-debut').value;
   const yearDebType = document.getElementById('f-year-debut-type').value;
-  const nonAmortie = document.getElementById('f-non-amortie').checked;
+  const vncFilter = document.getElementById('f-vnc-filter').value;
 
   localStorage.setItem('amort_date', dateStr);
   localStorage.setItem('amort_gran', gran);
   localStorage.setItem('amort_year_debut', yearDeb);
   localStorage.setItem('amort_year_debut_type', yearDebType);
-  localStorage.setItem('amort_non_amortie', nonAmortie);
+  localStorage.setItem('amort_vnc_filter', vncFilter);
+  localStorage.setItem('amort_non_amortie', vncFilter === 'positive' ? 'true' : 'false');
 
   document.getElementById('loading').style.display = 'flex';
   document.getElementById('err-banner').style.display = 'none';
@@ -869,7 +872,7 @@ async function loadDashboard() {
   try {
     const cats = [...selectedCatIds].join(',');
 
-    const url = `/api/dashboard?date=${dateStr}&gran=${gran}&societe=${encodeURIComponent(soc)}&cat_ids=${cats}&asset_id=${assetId}&asset_search=${encodeURIComponent(search)}&year_debut=${yearDeb}&year_debut_type=${yearDebType}&non_amortie=${nonAmortie}`;
+    const url = `/api/dashboard?date=${dateStr}&gran=${gran}&societe=${encodeURIComponent(soc)}&cat_ids=${cats}&asset_id=${assetId}&asset_search=${encodeURIComponent(search)}&year_debut=${yearDeb}&year_debut_type=${yearDebType}&vnc_filter=${vncFilter}&non_amortie=${vncFilter === 'positive'}`;
     const r = await fetch(url);
     const data = await r.json();
     if (data.error) throw new Error(data.error);
